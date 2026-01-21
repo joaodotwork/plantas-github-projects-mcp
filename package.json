@@ -1,7 +1,7 @@
 {
-  "name": "plantas-github-projects-mcp",
+  "name": "@joaodotwork/plantas-github-projects-mcp",
   "version": "1.0.0",
-  "description": "MCP server for GitHub Projects v2 automation - create projects, milestones, issues, and iterations",
+  "description": "Plantas GitHub Projects v2 MCP server (unofficial) - automation for creating projects, milestones, issues, and iterations",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
