@@ -50,11 +50,12 @@ export GITHUB_TOKEN=ghp_your_token_here
 
 **For Claude Code:**
 ```bash
+# Using npx (published package)
+claude mcp add github-projects --env GITHUB_TOKEN=ghp_your_token_here -- npx -y @joaodotwork/plantas-github-projects-mcp
+
+# Or using local build
 cd github-projects-mcp
-claude mcp add github-projects \
-  --command "node" \
-  --arg "$(pwd)/dist/index.js" \
-  --env GITHUB_TOKEN=ghp_your_token_here
+claude mcp add github-projects --env GITHUB_TOKEN=ghp_your_token_here -- node $(pwd)/dist/index.js
 ```
 
 **For Gemini CLI:**
