@@ -16,13 +16,27 @@
     "mcp",
     "github",
     "projects",
-    "automation"
+    "automation",
+    "model-context-protocol",
+    "github-api",
+    "project-management"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/joaodotwork/plantas-github-projects-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/joaodotwork/plantas-github-projects-mcp/issues"
+  },
+  "homepage": "https://github.com/joaodotwork/plantas-github-projects-mcp#readme",
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "author": "João Doria de Souza",
   "license": "MIT",
