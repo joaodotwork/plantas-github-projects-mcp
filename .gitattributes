@@ -1,0 +1,6 @@
+# Exclude bots from contributor stats
+* linguist-generated=false
+*.md linguist-documentation
+
+# Exclude specific bot accounts from GitHub contributor graph
+# This is configured via GitHub settings, not gitattributes
