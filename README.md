@@ -61,10 +61,10 @@ claude mcp add github-projects --env GITHUB_TOKEN=ghp_your_token_here -- node $(
 **For Gemini CLI:**
 ```bash
 # Using npx (published package)
-gemini mcp add github-projects npx --env GITHUB_TOKEN=ghp_your_token_here -- -y plantas-github-projects-mcp
+gemini mcp add github-projects npx -e GITHUB_TOKEN=ghp_your_token_here -- -y @joaodotwork/plantas-github-projects-mcp
 
 # Using local build
-gemini mcp add github-projects node --env GITHUB_TOKEN=ghp_your_token_here "$(pwd)/dist/index.js"
+gemini mcp add github-projects node -e GITHUB_TOKEN=ghp_your_token_here -- $(pwd)/dist/index.js
 ```
 
 **For Claude Desktop:** Add to `~/Library/Application Support/Claude/claude_desktop_config.json`
