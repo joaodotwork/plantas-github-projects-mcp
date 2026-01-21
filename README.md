@@ -12,6 +12,7 @@ A Model Context Protocol (MCP) server for automating GitHub Projects v2 workflow
 - ✅ **Add to Projects**: Automatically add issues to project boards
 - ✅ **Iteration Fields**: Create weekly/sprint iteration fields
 - ✅ **Assign Iterations**: Distribute issues across sprints
+- ✅ **Sub-issue Management**: Add, remove, and reprioritize sub-issues
 - ✅ **Get Info**: Retrieve repository and project metadata
 
 ## Installation
@@ -300,6 +301,91 @@ Assign an issue to a specific iteration.
   "issueNumber": 80,
   "fieldId": "PVTIF_lAHOAwJiCM4BNC20zg8J544",
   "iterationId": "bab3ba50"
+}
+```
+
+---
+
+### `add_subissue`
+
+Add a sub-issue to a parent issue.
+
+**Parameters:**
+- `issueId` (string, required): Node ID of the parent issue
+- `subIssueId` (string, optional): Node ID of the sub-issue
+- `subIssueUrl` (string, optional): URL of the sub-issue
+- `replaceParent` (boolean, optional): Replace parent issue if one already exists
+
+**Example:**
+```typescript
+{
+  "issueId": "I_kwDOPxqaGM6RkGzw",
+  "subIssueId": "I_kwDOPxqaGM6RkHAB"
+}
+```
+
+**Returns:**
+```json
+{
+  "success": true,
+  "message": "Sub-issue added successfully"
+}
+```
+
+---
+
+### `remove_subissue`
+
+Remove a sub-issue from a parent issue.
+
+**Parameters:**
+- `issueId` (string, required): Node ID of the parent issue
+- `subIssueId` (string, required): Node ID of the sub-issue to remove
+
+**Example:**
+```typescript
+{
+  "issueId": "I_kwDOPxqaGM6RkGzw",
+  "subIssueId": "I_kwDOPxqaGM6RkHAB"
+}
+```
+
+**Returns:**
+```json
+{
+  "success": true,
+  "message": "Sub-issue removed successfully"
+}
+```
+
+---
+
+### `reprioritize_subissue`
+
+Reprioritize a sub-issue within a parent issue.
+
+**Parameters:**
+- `issueId` (string, required): Node ID of the parent issue
+- `subIssueId` (string, required): Node ID of the sub-issue to reprioritize
+- `afterId` (string, optional): ID of the sub-issue to be prioritized after
+- `beforeId` (string, optional): ID of the sub-issue to be prioritized before
+
+**Note:** Specify either `afterId` OR `beforeId`, not both.
+
+**Example:**
+```typescript
+{
+  "issueId": "I_kwDOPxqaGM6RkGzw",
+  "subIssueId": "I_kwDOPxqaGM6RkHAB",
+  "afterId": "I_kwDOPxqaGM6RkHCD"
+}
+```
+
+**Returns:**
+```json
+{
+  "success": true,
+  "message": "Sub-issue reprioritized successfully"
 }
 ```
 
