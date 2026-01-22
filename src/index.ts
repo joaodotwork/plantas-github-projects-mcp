@@ -79,6 +79,12 @@ interface ReprioritizeSubIssueInput {
   beforeId?: string;
 }
 
+interface UpdateItemStatusInput {
+  projectId: string;
+  itemId: string;
+  status: string;
+}
+
 // Tool definitions
 const tools: Tool[] = [
   {
@@ -387,13 +393,37 @@ const tools: Tool[] = [
       required: ["owner", "projectNumber"],
     },
   },
+  {
+    name: "update_item_status",
+    description:
+      "Update the status of a project item using human-readable status values. Automatically resolves field and option IDs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: {
+          type: "string",
+          description: "Project node ID (e.g., PVT_kwHOAwJiCM4BNC20)",
+        },
+        itemId: {
+          type: "string",
+          description: "Project item node ID (e.g., PVTI_lAHOAwJiCM4BNC20...)",
+        },
+        status: {
+          type: "string",
+          description:
+            "Human-readable status value (e.g., 'Todo', 'In Progress', 'Done')",
+        },
+      },
+      required: ["projectId", "itemId", "status"],
+    },
+  },
 ];
 
 // Server implementation
 const server = new Server(
   {
     name: "github-projects-mcp",
-    version: "1.1.1",
+    version: "1.2.0",
   },
   {
     capabilities: {
@@ -928,6 +958,109 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: "text",
               text: JSON.stringify(result.user.projectV2, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "update_item_status": {
+        const input = args as unknown as UpdateItemStatusInput;
+
+        // First, get project fields to find the Status field and its options
+        const projectResult = await githubGraphQL<any>(
+          `
+          query($projectId: ID!) {
+            node(id: $projectId) {
+              ... on ProjectV2 {
+                fields(first: 20) {
+                  nodes {
+                    ... on ProjectV2SingleSelectField {
+                      id
+                      name
+                      dataType
+                      options {
+                        id
+                        name
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        `,
+          { projectId: input.projectId }
+        );
+
+        // Find the Status field
+        const statusField = projectResult.node.fields.nodes.find(
+          (field: any) =>
+            field.dataType === "SINGLE_SELECT" &&
+            (field.name === "Status" || field.name === "status")
+        );
+
+        if (!statusField) {
+          throw new Error(
+            "No Status field found in project. Available fields: " +
+              projectResult.node.fields.nodes
+                .map((f: any) => f.name)
+                .join(", ")
+          );
+        }
+
+        // Find the option that matches the requested status (case-insensitive)
+        const statusOption = statusField.options.find(
+          (opt: any) =>
+            opt.name.toLowerCase() === input.status.toLowerCase()
+        );
+
+        if (!statusOption) {
+          throw new Error(
+            `Status '${input.status}' not found. Available options: ${statusField.options
+              .map((o: any) => o.name)
+              .join(", ")}`
+          );
+        }
+
+        // Update the project item's status field
+        const updateResult = await githubGraphQL<any>(
+          `
+          mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ProjectV2FieldValue!) {
+            updateProjectV2ItemFieldValue(input: {
+              projectId: $projectId
+              itemId: $itemId
+              fieldId: $fieldId
+              value: $value
+            }) {
+              projectV2Item {
+                id
+              }
+            }
+          }
+        `,
+          {
+            projectId: input.projectId,
+            itemId: input.itemId,
+            fieldId: statusField.id,
+            value: {
+              singleSelectOptionId: statusOption.id,
+            },
+          }
+        );
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: true,
+                  message: `Status updated to '${statusOption.name}'`,
+                  itemId: updateResult.updateProjectV2ItemFieldValue.projectV2Item.id,
+                },
+                null,
+                2
+              ),
             },
           ],
         };

@@ -13,6 +13,7 @@ A Model Context Protocol (MCP) server for automating GitHub Projects v2 workflow
 - ✅ **Iteration Fields**: Create weekly/sprint iteration fields
 - ✅ **Assign Iterations**: Distribute issues across sprints
 - ✅ **Sub-issue Management**: Add, remove, and reprioritize sub-issues
+- ✅ **Update Status**: Change project item status with human-readable values
 - ✅ **Get Info**: Retrieve repository and project metadata
 
 ## Installation
@@ -387,6 +388,37 @@ Reprioritize a sub-issue within a parent issue.
 {
   "success": true,
   "message": "Sub-issue reprioritized successfully"
+}
+```
+
+---
+
+### `update_item_status`
+
+Update the status of a project item using human-readable status values.
+
+**Parameters:**
+- `projectId` (string, required): Project node ID
+- `itemId` (string, required): Project item node ID
+- `status` (string, required): Human-readable status (e.g., "Todo", "In Progress", "Done")
+
+**Note:** The tool automatically finds the Status field and matches the status name (case-insensitive). It will show available options if the status is not found.
+
+**Example:**
+```typescript
+{
+  "projectId": "PVT_kwHOAwJiCM4BNC20",
+  "itemId": "PVTI_lAHOAwJiCM4BNC20zgXYZ...",
+  "status": "In Progress"
+}
+```
+
+**Returns:**
+```json
+{
+  "success": true,
+  "message": "Status updated to 'In Progress'",
+  "itemId": "PVTI_lAHOAwJiCM4BNC20zgXYZ..."
 }
 ```
 
