@@ -14,6 +14,7 @@ A Model Context Protocol (MCP) server for automating GitHub Projects v2 workflow
 - ✅ **Assign Iterations**: Distribute issues across sprints
 - ✅ **Sub-issue Management**: Add, remove, and reprioritize sub-issues
 - ✅ **Update Status**: Change project item status with human-readable values
+- ✅ **Update Project**: Modify project settings like title, description, and visibility
 - ✅ **Get Info**: Retrieve repository and project metadata
 
 ## Installation
@@ -419,6 +420,44 @@ Update the status of a project item using human-readable status values.
   "success": true,
   "message": "Status updated to 'In Progress'",
   "itemId": "PVTI_lAHOAwJiCM4BNC20zgXYZ..."
+}
+```
+
+---
+
+### `update_project_settings`
+
+Update project settings like title, description, README, or visibility.
+
+**Parameters:**
+- `projectId` (string, required): Project node ID
+- `title` (string, optional): New project title
+- `shortDescription` (string, optional): New short description
+- `readme` (string, optional): New README content (markdown)
+- `public` (boolean, optional): Set project visibility (true = public, false = private)
+
+**Example:**
+```typescript
+{
+  "projectId": "PVT_kwHOAwJiCM4BNC20",
+  "title": "Q1 2025 Product Launch",
+  "shortDescription": "Sprint planning for v2.0 release",
+  "public": true
+}
+```
+
+**Returns:**
+```json
+{
+  "success": true,
+  "message": "Project settings updated successfully",
+  "project": {
+    "id": "PVT_kwHOAwJiCM4BNC20",
+    "title": "Q1 2025 Product Launch",
+    "shortDescription": "Sprint planning for v2.0 release",
+    "public": true,
+    "url": "https://github.com/users/joaodotwork/projects/7"
+  }
 }
 ```
 

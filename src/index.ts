@@ -85,6 +85,15 @@ interface UpdateItemStatusInput {
   status: string;
 }
 
+interface UpdateProjectSettingsInput {
+  projectId: string;
+  title?: string;
+  shortDescription?: string;
+  readme?: string;
+  public?: boolean;
+}
+
+
 // Tool definitions
 const tools: Tool[] = [
   {
@@ -417,13 +426,44 @@ const tools: Tool[] = [
       required: ["projectId", "itemId", "status"],
     },
   },
+  {
+    name: "update_project_settings",
+    description:
+      "Update project settings like title, description, readme, or visibility.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: {
+          type: "string",
+          description: "Project node ID (e.g., PVT_kwHOAwJiCM4BNC20)",
+        },
+        title: {
+          type: "string",
+          description: "New project title (optional)",
+        },
+        shortDescription: {
+          type: "string",
+          description: "New short description (optional)",
+        },
+        readme: {
+          type: "string",
+          description: "New README content (optional)",
+        },
+        public: {
+          type: "boolean",
+          description: "Set project visibility (optional)",
+        },
+      },
+      required: ["projectId"],
+    },
+  },
 ];
 
 // Server implementation
 const server = new Server(
   {
     name: "github-projects-mcp",
-    version: "1.2.0",
+    version: "1.3.0",
   },
   {
     capabilities: {
@@ -1057,6 +1097,53 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   success: true,
                   message: `Status updated to '${statusOption.name}'`,
                   itemId: updateResult.updateProjectV2ItemFieldValue.projectV2Item.id,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      case "update_project_settings": {
+        const input = args as unknown as UpdateProjectSettingsInput;
+
+        // Build the mutation input dynamically based on provided fields
+        const updateInput: any = { projectId: input.projectId };
+        if (input.title !== undefined) updateInput.title = input.title;
+        if (input.shortDescription !== undefined)
+          updateInput.shortDescription = input.shortDescription;
+        if (input.readme !== undefined) updateInput.readme = input.readme;
+        if (input.public !== undefined) updateInput.public = input.public;
+
+        const result = await githubGraphQL<any>(
+          `
+          mutation($input: UpdateProjectV2Input!) {
+            updateProjectV2(input: $input) {
+              projectV2 {
+                id
+                title
+                shortDescription
+                readme
+                public
+                url
+              }
+            }
+          }
+        `,
+          { input: updateInput }
+        );
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: true,
+                  message: "Project settings updated successfully",
+                  project: result.updateProjectV2.projectV2,
                 },
                 null,
                 2
