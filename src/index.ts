@@ -393,7 +393,7 @@ const tools: Tool[] = [
 const server = new Server(
   {
     name: "github-projects-mcp",
-    version: "1.1.0",
+    version: "1.1.1",
   },
   {
     capabilities: {
