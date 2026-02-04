@@ -24,16 +24,25 @@ A Model Context Protocol (MCP) server for automating GitHub Projects v2 workflow
 - Node.js 20+
 - GitHub Personal Access Token with `repo` and `project` scopes
 
-### Install as npm package
+### Quick Start (Recommended)
+
+Use `npx` to run the server directly without installation:
 
 ```bash
-npm install -g plantas-github-projects-mcp
+npx -y @joaodotwork/plantas-github-projects-mcp
 ```
 
-### Or build from source
+### Install as global npm package
 
 ```bash
-cd github-projects-mcp
+npm install -g @joaodotwork/plantas-github-projects-mcp
+```
+
+### Build from source (Development)
+
+```bash
+git clone https://github.com/joaodotwork/plantas-github-projects-mcp.git
+cd plants-github-projects-mcp
 npm install
 npm run build
 ```
@@ -50,50 +59,28 @@ export GITHUB_TOKEN=ghp_your_token_here
 
 ### 2. Configure Claude
 
-**For Claude Code:**
+**For Claude Code (CLI):**
 ```bash
-# Using npx (published package)
+# Using npx (Recommended)
 claude mcp add github-projects --env GITHUB_TOKEN=ghp_your_token_here -- npx -y @joaodotwork/plantas-github-projects-mcp
-
-# Or using local build
-cd github-projects-mcp
-claude mcp add github-projects --env GITHUB_TOKEN=ghp_your_token_here -- node $(pwd)/dist/index.js
 ```
 
 **For Gemini CLI:**
 ```bash
-# Using npx (published package)
+# Using npx
 gemini mcp add github-projects npx -e GITHUB_TOKEN=ghp_your_token_here -- -y @joaodotwork/plantas-github-projects-mcp
-
-# Using local build
-gemini mcp add github-projects node -e GITHUB_TOKEN=ghp_your_token_here -- $(pwd)/dist/index.js
 ```
 
 **For Claude Desktop:** Add to `~/Library/Application Support/Claude/claude_desktop_config.json`
 
-See [INSTALL.md](INSTALL.md) for detailed platform-specific instructions and manual configuration.
+See [INSTALL.md](INSTALL.md) for detailed platform-specific instructions.
 
 ```json
 {
   "mcpServers": {
     "github-projects": {
       "command": "npx",
-      "args": ["-y", "plantas-github-projects-mcp"],
-      "env": {
-        "GITHUB_TOKEN": "ghp_your_token_here"
-      }
-    }
-  }
-}
-```
-
-Or if installed globally:
-
-```json
-{
-  "mcpServers": {
-    "github-projects": {
-      "command": "github-projects-mcp",
+      "args": ["-y", "@joaodotwork/plantas-github-projects-mcp"],
       "env": {
         "GITHUB_TOKEN": "ghp_your_token_here"
       }

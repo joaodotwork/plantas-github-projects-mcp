@@ -4,26 +4,21 @@ This MCP server works with both **Claude Desktop** (desktop app) and **Claude Co
 
 ## 🚀 Fastest Installation (Claude Code CLI)
 
-If you're using Claude Code, use the CLI for one-command installation:
+If you're using Claude Code, use the CLI for one-command installation using `npx`:
 
 ```bash
 # 1. Get GitHub token from https://github.com/settings/tokens/new
 #    Scopes needed: repo, project
 
-# 2. Build the MCP server
-cd /path/to/github-projects-mcp
-npm install && npm run build
-
-# 3. Add to Claude Code
+# 2. Add to Claude Code using npx (no local installation required)
 claude mcp add github-projects \
-  --command "node" \
-  --arg "$(pwd)/dist/index.js" \
-  --env GITHUB_TOKEN=ghp_your_token_here
+  --env GITHUB_TOKEN=ghp_your_token_here \
+  -- npx -y @joaodotwork/plantas-github-projects-mcp
 
-# 4. Verify
+# 3. Verify
 claude mcp list
 
-# 5. Reload VS Code (Cmd+Shift+P → "Developer: Reload Window")
+# 4. Reload VS Code (Cmd+Shift+P → "Developer: Reload Window")
 ```
 
 Done! Skip to verification below.
@@ -35,8 +30,7 @@ Done! Skip to verification below.
 - [Fastest Installation (Claude Code CLI)](#-fastest-installation-claude-code-cli)
 - [Manual Installation](#manual-installation)
   - [Option A: Claude Desktop](#option-a-claude-desktop-configuration)
-  - [Option B: Claude Code (CLI)](#quick-install-recommended)
-  - [Option B: Claude Code (Manual)](#manual-configuration-alternative)
+  - [Option B: Claude Code (Manual)](#option-b-claude-code-vs-code-extension-configuration)
 - [Troubleshooting](#troubleshooting)
 - [Development Mode](#development-mode)
 
@@ -53,25 +47,9 @@ Done! Skip to verification below.
 3. Generate token (format: `ghp_...`)
 4. **Save it securely** - you won't see it again!
 
-### 2. Install the MCP Server
+### 2. Configure Claude
 
-**Option A: Install from source (recommended for development)**
-
-```bash
-cd github-projects-mcp
-npm install
-npm run build
-```
-
-**Option B: Install globally**
-
-```bash
-npm install -g .
-```
-
-### 3. Configure Claude
-
-Choose your installation based on which Claude client you're using:
+Choose your installation based on which Claude client you're using. We recommend using `npx` to run the server without manually managing files.
 
 ---
 
@@ -95,8 +73,8 @@ Add the MCP server configuration:
 {
   "mcpServers": {
     "github-projects": {
-      "command": "node",
-      "args": ["/absolute/path/to/github-projects-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@joaodotwork/plantas-github-projects-mcp"],
       "env": {
         "GITHUB_TOKEN": "ghp_your_token_here"
       }
@@ -106,23 +84,7 @@ Add the MCP server configuration:
 ```
 
 **Replace:**
-- `/absolute/path/to/github-projects-mcp` with actual path
 - `ghp_your_token_here` with your GitHub token
-
-**Example (macOS):**
-```json
-{
-  "mcpServers": {
-    "github-projects": {
-      "command": "node",
-      "args": ["/Users/joao/Dev/dpds-arkiv/github-projects-mcp/dist/index.js"],
-      "env": {
-        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-      }
-    }
-  }
-}
-```
 
 **Restart Claude Desktop:**
 
@@ -134,13 +96,18 @@ In Claude Desktop, start a new conversation and ask:
 
 > "What MCP tools do you have available for GitHub Projects?"
 
-You should see 8 tools:
+You should see 13 tools:
 - `create_project`
 - `create_milestone`
 - `create_issue`
 - `add_issue_to_project`
 - `create_iteration_field`
 - `assign_issue_to_iteration`
+- `add_subissue`
+- `remove_subissue`
+- `reprioritize_subissue`
+- `update_item_status`
+- `update_project_settings`
 - `get_repository_info`
 - `get_project_info`
 
@@ -155,14 +122,9 @@ Claude Code uses a different configuration file than Claude Desktop.
 Use the Claude Code CLI to install the MCP server automatically:
 
 ```bash
-# Navigate to the MCP directory
-cd /Users/joao/Dev/dpds-arkiv/github-projects-mcp
-
-# Add the MCP server using Claude Code CLI
 claude mcp add github-projects \
-  --command "node" \
-  --arg "$(pwd)/dist/index.js" \
-  --env GITHUB_TOKEN=ghp_your_token_here
+  --env GITHUB_TOKEN=ghp_your_token_here \
+  -- npx -y @joaodotwork/plantas-github-projects-mcp
 ```
 
 **Or set token via environment variable:**
@@ -173,9 +135,8 @@ export GITHUB_TOKEN=ghp_your_token_here
 
 # Then add without hardcoding token
 claude mcp add github-projects \
-  --command "node" \
-  --arg "$(pwd)/dist/index.js" \
-  --env GITHUB_TOKEN=${GITHUB_TOKEN}
+  --env GITHUB_TOKEN=${GITHUB_TOKEN} \
+  -- npx -y @joaodotwork/plantas-github-projects-mcp
 ```
 
 **Verify installation:**
@@ -221,25 +182,10 @@ If using manual configuration, add the server to the `mcpServers` section:
 {
   "mcpServers": {
     "github-projects": {
-      "command": "node",
-      "args": ["/absolute/path/to/github-projects-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@joaodotwork/plantas-github-projects-mcp"],
       "env": {
         "GITHUB_TOKEN": "ghp_your_token_here"
-      }
-    }
-  }
-}
-```
-
-**Example (macOS):**
-```json
-{
-  "mcpServers": {
-    "github-projects": {
-      "command": "node",
-      "args": ["/Users/joao/Dev/dpds-arkiv/github-projects-mcp/dist/index.js"],
-      "env": {
-        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
       }
     }
   }
@@ -263,7 +209,7 @@ In Claude Code chat panel, ask:
 
 > "What MCP tools do you have available for GitHub Projects?"
 
-You should see 8 tools listed.
+You should see 13 tools listed.
 
 ### 5. Alternative: Use Environment Variable
 
@@ -279,8 +225,8 @@ export GITHUB_TOKEN=ghp_your_token_here
 {
   "mcpServers": {
     "github-projects": {
-      "command": "node",
-      "args": ["/Users/joao/Dev/dpds-arkiv/github-projects-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@joaodotwork/plantas-github-projects-mcp"],
       "env": {
         "GITHUB_TOKEN": "${GITHUB_TOKEN}"
       }
@@ -311,9 +257,8 @@ For Claude Code:
 
 **Common issues:**
 1. **Invalid JSON in config** - Use a JSON validator
-2. **Wrong path** - Use absolute path, not relative
-3. **Missing build** - Run `npm run build` first
-4. **Token not set** - Verify `GITHUB_TOKEN` in config
+2. **Token not set** - Verify `GITHUB_TOKEN` in config
+3. **Node.js not available** - Ensure `npx` is in your path
 
 ### "401 Unauthorized" Error
 
@@ -323,9 +268,8 @@ For Claude Code:
 
 ### "Cannot find module" Error
 
-- Run `npm install` in the MCP directory
-- Verify `dist/index.js` exists after building
-- Check the absolute path in config
+- If using local path: Check the absolute path in config
+- If using npx: Ensure you have internet connection to download the package
 
 ### Claude Code Specific Issues
 
@@ -342,24 +286,20 @@ For Claude Code:
 
 ## Development Mode
 
-For development with auto-rebuild:
+For development (running from source):
 
 ```bash
-cd github-projects-mcp
-npm run dev
+# 1. Clone and install
+git clone https://github.com/joaodotwork/plantas-github-projects-mcp.git
+cd plants-github-projects-mcp
+npm install
+
+# 2. Build
+npm run build
+
+# 3. Register locally
+claude mcp add github-projects-dev \
+  --command "node" \
+  --arg "$(pwd)/dist/index.js" \
+  --env GITHUB_TOKEN=ghp_your_token_here
 ```
-
-In another terminal, test the server:
-
-```bash
-echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/index.js
-```
-
-## Next Steps
-
-Once installed, check out the [README.md](README.md) for:
-- Tool documentation
-- Usage examples
-- Complete workflow examples
-
-Happy automating! 🚀

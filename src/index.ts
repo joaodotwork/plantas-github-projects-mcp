@@ -8,13 +8,10 @@ import {
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { graphql } from "@octokit/graphql";
+import { getGitHubToken } from "./auth.js";
 
 // GitHub GraphQL client
-const githubGraphQL = graphql.defaults({
-  headers: {
-    authorization: `token ${process.env.GITHUB_TOKEN}`,
-  },
-});
+let githubGraphQL: typeof graphql;
 
 interface ProjectInput {
   owner: string;
@@ -463,7 +460,7 @@ const tools: Tool[] = [
 const server = new Server(
   {
     name: "github-projects-mcp",
-    version: "1.3.0",
+    version: "1.3.1",
   },
   {
     capabilities: {
@@ -912,13 +909,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             repository(owner: $owner, name: $repo) {
               id
               name
-              labels(first: 50) {
+              labels(first: 100) {
                 nodes {
                   id
                   name
                 }
               }
-              milestones(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) {
+              milestones(first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
                 nodes {
                   id
                   number
@@ -955,7 +952,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 id
                 title
                 number
-                fields(first: 20) {
+                fields(first: 100) {
                   nodes {
                     ... on ProjectV2Field {
                       id
@@ -1012,7 +1009,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           query($projectId: ID!) {
             node(id: $projectId) {
               ... on ProjectV2 {
-                fields(first: 20) {
+                fields(first: 100) {
                   nodes {
                     ... on ProjectV2SingleSelectField {
                       id
@@ -1291,33 +1288,34 @@ async function getProjectItemId(
 async function main() {
   const transport = new StdioServerTransport();
 
+  // Get token (checks env var, config file, or prompts Device Flow)
+  const token = await getGitHubToken();
+
+  githubGraphQL = graphql.defaults({
+    headers: {
+      authorization: `token ${token}`,
+    },
+  });
+
   console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.error("🚀 GitHub Projects MCP Server");
   console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.error("");
   console.error("📋 Server Info:");
   console.error("   Name:      github-projects-mcp");
-  console.error("   Version:   1.0.0");
+  console.error("   Version:   1.3.0");
   console.error("   Transport: stdio (stdin/stdout)");
   console.error("   Protocol:  Model Context Protocol (MCP)");
   console.error("");
   console.error("🔧 Configuration:");
-  console.error("   GitHub Token: " + (process.env.GITHUB_TOKEN ? "✅ Set" : "❌ Missing"));
+  console.error("   GitHub Token: ✅ Set");
   console.error("   Node Version: " + process.version);
   console.error("   Platform:     " + process.platform);
   console.error("");
-  console.error("🛠️  Available Tools (11):");
-  console.error("   1. create_project");
-  console.error("   2. create_milestone");
-  console.error("   3. create_issue");
-  console.error("   4. add_issue_to_project");
-  console.error("   5. create_iteration_field");
-  console.error("   6. assign_issue_to_iteration");
-  console.error("   7. add_subissue");
-  console.error("   8. remove_subissue");
-  console.error("   9. reprioritize_subissue");
-  console.error("   10. get_repository_info");
-  console.error("   11. get_project_info");
+  console.error(`🛠️  Available Tools (${tools.length}):`);
+  tools.forEach((tool, index) => {
+    console.error(`   ${index + 1}. ${tool.name}`);
+  });
   console.error("");
   console.error("ℹ️  Transport Details:");
   console.error("   • MCP uses stdio (not HTTP/SSE)");
@@ -1343,11 +1341,6 @@ main().catch((error) => {
   console.error("❌ Fatal Error:");
   console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.error(error);
-  console.error("");
-  if (!process.env.GITHUB_TOKEN) {
-    console.error("💡 Tip: Set GITHUB_TOKEN environment variable");
-    console.error("   export GITHUB_TOKEN=ghp_your_token_here");
-  }
   console.error("");
   process.exit(1);
 });
