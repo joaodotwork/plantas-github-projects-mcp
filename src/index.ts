@@ -90,6 +90,13 @@ interface UpdateProjectSettingsInput {
   public?: boolean;
 }
 
+interface ProjectStatusUpdateInput {
+  projectId: string;
+  status: "INACTIVE" | "ON_TRACK" | "AT_RISK" | "OFF_TRACK" | "COMPLETE";
+  body?: string;
+  startDate?: string;
+  targetDate?: string;
+}
 
 // Tool definitions
 const tools: Tool[] = [
@@ -454,13 +461,62 @@ const tools: Tool[] = [
       required: ["projectId"],
     },
   },
+  {
+    name: "create_project_status_update",
+    description: "Create a status update for a project board.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: {
+          type: "string",
+          description: "Project node ID",
+        },
+        status: {
+          type: "string",
+          enum: ["INACTIVE", "ON_TRACK", "AT_RISK", "OFF_TRACK", "COMPLETE"],
+          description: "The status level",
+        },
+        body: {
+          type: "string",
+          description: "Status update body (markdown)",
+        },
+        startDate: {
+          type: "string",
+          description: "Start date (YYYY-MM-DD)",
+        },
+        targetDate: {
+          type: "string",
+          description: "Target date (YYYY-MM-DD)",
+        },
+      },
+      required: ["projectId", "status"],
+    },
+  },
+  {
+    name: "get_project_status_updates",
+    description: "Get recent status updates for a project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: {
+          type: "string",
+          description: "Project node ID",
+        },
+        limit: {
+          type: "number",
+          description: "Number of updates to retrieve (default: 5)",
+        },
+      },
+      required: ["projectId"],
+    },
+  },
 ];
 
 // Server implementation
 const server = new Server(
   {
     name: "github-projects-mcp",
-    version: "1.3.1",
+    version: "1.3.2",
   },
   {
     capabilities: {
@@ -1150,6 +1206,87 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case "create_project_status_update": {
+        const input = args as unknown as ProjectStatusUpdateInput;
+
+        const result = await githubGraphQL<any>(
+          `
+          mutation($projectId: ID!, $status: ProjectV2StatusUpdateStatus!, $body: String, $startDate: Date, $targetDate: Date) {
+            createProjectV2StatusUpdate(input: {
+              projectId: $projectId
+              status: $status
+              body: $body
+              startDate: $startDate
+              targetDate: $targetDate
+            }) {
+              statusUpdate {
+                id
+                status
+                body
+                startDate
+                targetDate
+              }
+            }
+          }
+        `,
+          {
+            projectId: input.projectId,
+            status: input.status,
+            body: input.body || "",
+            startDate: input.startDate || null,
+            targetDate: input.targetDate || null,
+          }
+        );
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result.createProjectV2StatusUpdate.statusUpdate, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "get_project_status_updates": {
+        const { projectId, limit } = args as { projectId: string; limit?: number };
+
+        const result = await githubGraphQL<any>(
+          `
+          query($projectId: ID!, $limit: Int!) {
+            node(id: $projectId) {
+              ... on ProjectV2 {
+                statusUpdates(first: $limit) {
+                  nodes {
+                    id
+                    status
+                    body
+                    startDate
+                    targetDate
+                    createdAt
+                    updatedAt
+                    creator {
+                      login
+                    }
+                  }
+                }
+              }
+            }
+          }
+        `,
+          { projectId, limit: limit || 5 }
+        );
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result.node.statusUpdates.nodes, null, 2),
+            },
+          ],
+        };
+      }
+
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -1165,6 +1302,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     };
   }
 });
+
 
 // Helper functions
 async function getOwnerId(owner: string): Promise<string> {

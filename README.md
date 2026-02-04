@@ -14,6 +14,7 @@ A Model Context Protocol (MCP) server for automating GitHub Projects v2 workflow
 - ✅ **Assign Iterations**: Distribute issues across sprints
 - ✅ **Sub-issue Management**: Add, remove, and reprioritize sub-issues
 - ✅ **Update Status**: Change project item status with human-readable values
+- ✅ **Project Status Updates**: Add and retrieve project-level status updates (On Track, At Risk, etc.)
 - ✅ **Update Project**: Modify project settings like title, description, and visibility
 - ✅ **Get Info**: Retrieve repository and project metadata
 
@@ -523,6 +524,44 @@ Get project ID, fields, and iteration IDs.
       ...
     ]
   }
+}
+```
+
+### `create_project_status_update`
+
+Create a status update for a project board.
+
+**Parameters:**
+- `projectId` (string, required): Project node ID
+- `status` (string, required): The status level (`INACTIVE`, `ON_TRACK`, `AT_RISK`, `OFF_TRACK`, `COMPLETE`)
+- `body` (string, optional): Status update body (markdown)
+- `startDate` (string, optional): Start date (YYYY-MM-DD)
+- `targetDate` (string, optional): Target date (YYYY-MM-DD)
+
+**Example:**
+```typescript
+{
+  "projectId": "PVT_kwHOAwJiCM4BNC20",
+  "status": "ON_TRACK",
+  "body": "Project is proceeding as planned. All milestones for this week are met."
+}
+```
+
+---
+
+### `get_project_status_updates`
+
+Get recent status updates for a project.
+
+**Parameters:**
+- `projectId` (string, required): Project node ID
+- `limit` (number, optional): Number of updates to retrieve (default: 5)
+
+**Example:**
+```typescript
+{
+  "projectId": "PVT_kwHOAwJiCM4BNC20",
+  "limit": 3
 }
 ```
 

@@ -96,7 +96,7 @@ In Claude Desktop, start a new conversation and ask:
 
 > "What MCP tools do you have available for GitHub Projects?"
 
-You should see 13 tools:
+You should see 15 tools:
 - `create_project`
 - `create_milestone`
 - `create_issue`
@@ -108,6 +108,8 @@ You should see 13 tools:
 - `reprioritize_subissue`
 - `update_item_status`
 - `update_project_settings`
+- `create_project_status_update`
+- `get_project_status_updates`
 - `get_repository_info`
 - `get_project_info`
 
