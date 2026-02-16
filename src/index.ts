@@ -12,6 +12,8 @@ import { getGitHubToken } from "./auth.js";
 
 // GitHub GraphQL client
 let githubGraphQL: typeof graphql;
+// Raw token for REST API calls (e.g., create_milestone)
+let githubToken: string;
 
 interface ProjectInput {
   owner: string;
@@ -516,7 +518,7 @@ const tools: Tool[] = [
 const server = new Server(
   {
     name: "github-projects-mcp",
-    version: "1.3.2",
+    version: "1.4.1",
   },
   {
     capabilities: {
@@ -576,39 +578,55 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "create_milestone": {
         const input = args as unknown as MilestoneInput;
-        const repoId = await getRepositoryId(input.owner, input.repo);
 
-        const result = await githubGraphQL<any>(
-          `
-          mutation($repoId: ID!, $title: String!, $description: String, $dueOn: DateTime) {
-            createMilestone(input: {
-              repositoryId: $repoId
-              title: $title
-              description: $description
-              dueOn: $dueOn
-            }) {
-              milestone {
-                id
-                number
-                title
-                url
-              }
-            }
-          }
-        `,
+        // GitHub GraphQL API does not have a createMilestone mutation.
+        // Use the REST API instead: POST /repos/{owner}/{repo}/milestones
+        const body: Record<string, unknown> = {
+          title: input.title,
+        };
+        if (input.description) {
+          body.description = input.description;
+        }
+        if (input.dueOn) {
+          body.due_on = input.dueOn;
+        }
+
+        const response = await fetch(
+          `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/milestones`,
           {
-            repoId,
-            title: input.title,
-            description: input.description || "",
-            dueOn: input.dueOn || null,
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${githubToken}`,
+              Accept: "application/vnd.github+json",
+              "Content-Type": "application/json",
+              "X-GitHub-Api-Version": "2022-11-28",
+            },
+            body: JSON.stringify(body),
           }
         );
+
+        if (!response.ok) {
+          const errorBody = await response.text();
+          throw new Error(
+            `GitHub REST API error (${response.status}): ${errorBody}`
+          );
+        }
+
+        const milestone = (await response.json()) as Record<string, unknown>;
 
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify(result.createMilestone.milestone, null, 2),
+              text: JSON.stringify(
+                {
+                  number: milestone.number,
+                  title: milestone.title,
+                  id: milestone.node_id,
+                },
+                null,
+                2
+              ),
             },
           ],
         };
@@ -1429,6 +1447,9 @@ async function main() {
   // Get token (checks env var, config file, or prompts Device Flow)
   const token = await getGitHubToken();
 
+  // Store raw token for REST API calls (e.g., create_milestone)
+  githubToken = token;
+
   githubGraphQL = graphql.defaults({
     headers: {
       authorization: `token ${token}`,
@@ -1441,7 +1462,7 @@ async function main() {
   console.error("");
   console.error("📋 Server Info:");
   console.error("   Name:      github-projects-mcp");
-  console.error("   Version:   1.3.0");
+  console.error("   Version:   1.4.1");
   console.error("   Transport: stdio (stdin/stdout)");
   console.error("   Protocol:  Model Context Protocol (MCP)");
   console.error("");
