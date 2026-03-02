@@ -39,11 +39,11 @@ Deployment: development
 3. Deploy to staging
 
 ## Recent Activity
+- **2026-03-02**: 6e1c16f - chore: bump version to 1.4.2
 - **2026-03-02**: 9afcd65 - fix: support GitHub organizations in project queries (issue #7)
-- **2026-02-16**: dd4867b - fix: use REST API for create_milestone
-- **2026-02-07**: 3d03c4a - feat: migrate to Go architecture and port all TS tools
-- **2026-02-07**: 4e9e316 - docs: add migration guide for Go alignment
-- **2026-02-07**: Initial Seiva context setup
+- **2026-03-02**: f293235 - chore: bump version to 1.4.2
+- **2026-03-02**: 5b6e493 - test: add Vitest tests for iteration tool handlers
+- **2026-03-02**: 2f5294a - fix: correct GraphQL mutation for create_iteration_field
 
 ## Cost-Effective Context Strategy
 **For AI assistants:**
