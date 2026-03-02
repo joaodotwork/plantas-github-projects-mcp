@@ -9,6 +9,12 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { graphql } from "@octokit/graphql";
 import { getGitHubToken } from "./auth.js";
+import {
+  createIterationField,
+  assignIssueToIteration,
+  type IterationInput,
+  type AssignIterationInput,
+} from "./tools/iterations.js";
 
 // GitHub GraphQL client
 let githubGraphQL: typeof graphql;
@@ -39,25 +45,6 @@ interface IssueInput {
   assignees?: string[];
 }
 
-interface IterationInput {
-  projectId: string;
-  fieldName: string;
-  duration: number;
-  startDate: string;
-  iterations: Array<{
-    title: string;
-    startDate: string;
-    duration: number;
-  }>;
-}
-
-interface AssignIterationInput {
-  owner: string;
-  repo: string;
-  projectNumber: number;
-  issueNumber: number;
-  iterationId: string;
-}
 
 interface AddSubIssueInput {
   issueId: string;
@@ -724,134 +711,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "create_iteration_field": {
         const input = args as unknown as IterationInput;
-
-        // Step 1: Create the iteration field
-        const createResult = await githubGraphQL<any>(
-          `
-          mutation($projectId: ID!, $name: String!) {
-            createProjectV2Field(input: {
-              projectId: $projectId
-              dataType: ITERATION
-              name: $name
-            }) {
-              projectV2Field {
-                ... on ProjectV2IterationField {
-                  id
-                  name
-                }
-              }
-            }
-          }
-        `,
-          {
-            projectId: input.projectId,
-            name: input.fieldName,
-          }
-        );
-
-        const fieldId = createResult.createProjectV2Field.projectV2Field.id;
-
-        // Step 2: Update the field with iteration configuration
-        const updateResult = await githubGraphQL<any>(
-          `
-          mutation($fieldId: ID!, $duration: Int!, $startDate: Date!, $iterations: [ProjectV2IterationFieldConfigurationIterationInput!]!) {
-            updateProjectV2Field(input: {
-              fieldId: $fieldId
-              iterationConfiguration: {
-                duration: $duration
-                startDate: $startDate
-                iterations: $iterations
-              }
-            }) {
-              projectV2Field {
-                ... on ProjectV2IterationField {
-                  id
-                  name
-                  configuration {
-                    iterations {
-                      id
-                      title
-                      startDate
-                      duration
-                    }
-                  }
-                }
-              }
-            }
-          }
-        `,
-          {
-            fieldId: fieldId,
-            duration: input.duration,
-            startDate: input.startDate,
-            iterations: input.iterations,
-          }
-        );
-
+        const field = await createIterationField(githubGraphQL, input);
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                updateResult.updateProjectV2Field.projectV2Field,
-                null,
-                2
-              ),
-            },
-          ],
+          content: [{ type: "text", text: JSON.stringify(field, null, 2) }],
         };
       }
 
       case "assign_issue_to_iteration": {
-        const input = args as unknown as AssignIterationInput & {
-          fieldId: string;
-          iterationId: string;
-        };
-
-        // Get project item ID for this issue
-        const itemId = await getProjectItemId(
-          input.owner,
-          input.repo,
-          input.issueNumber,
-          input.projectNumber
-        );
-
-        const result = await githubGraphQL<any>(
-          `
-          mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $iterationId: String!) {
-            updateProjectV2ItemFieldValue(input: {
-              projectId: $projectId
-              itemId: $itemId
-              fieldId: $fieldId
-              value: {
-                iterationId: $iterationId
-              }
-            }) {
-              projectV2Item {
-                id
-              }
-            }
-          }
-        `,
-          {
-            projectId: await getProjectId(input.owner, input.projectNumber),
-            itemId,
-            fieldId: input.fieldId,
-            iterationId: input.iterationId,
-          }
-        );
-
+        const input = args as unknown as AssignIterationInput;
+        const item = await assignIssueToIteration(githubGraphQL, input);
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                result.updateProjectV2ItemFieldValue.projectV2Item,
-                null,
-                2
-              ),
-            },
-          ],
+          content: [{ type: "text", text: JSON.stringify(item, null, 2) }],
         };
       }
 
@@ -1381,61 +1251,6 @@ async function getUserId(username: string): Promise<string> {
     { login: username }
   );
   return result.user.id;
-}
-
-async function getProjectId(owner: string, number: number): Promise<string> {
-  const result = await githubGraphQL<any>(
-    `
-    query($owner: String!, $number: Int!) {
-      user(login: $owner) {
-        projectV2(number: $number) {
-          id
-        }
-      }
-    }
-  `,
-    { owner, number }
-  );
-  return result.user.projectV2.id;
-}
-
-async function getProjectItemId(
-  owner: string,
-  repo: string,
-  issueNumber: number,
-  projectNumber: number
-): Promise<string> {
-  const result = await githubGraphQL<any>(
-    `
-    query($owner: String!, $repo: String!, $issueNumber: Int!) {
-      repository(owner: $owner, name: $repo) {
-        issue(number: $issueNumber) {
-          projectItems(first: 10) {
-            nodes {
-              id
-              project {
-                number
-              }
-            }
-          }
-        }
-      }
-    }
-  `,
-    { owner, repo, issueNumber }
-  );
-
-  const item = result.repository.issue.projectItems.nodes.find(
-    (node: any) => node.project.number === projectNumber
-  );
-
-  if (!item) {
-    throw new Error(
-      `Issue #${issueNumber} not found in project #${projectNumber}`
-    );
-  }
-
-  return item.id;
 }
 
 // Start the server
