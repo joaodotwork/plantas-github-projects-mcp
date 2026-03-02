@@ -7,9 +7,13 @@ Branch: main
 Deployment: development
 
 ## Uncommitted Work
-**Status:** Clean working tree
+```
+?? .claude/AI_GUIDE.md
+?? .claude/seiva-analyze.cjs
+?? .claude/sessions.json
+?? .plantas.config.json
+```
 
-**Last Commit:** 9afcd65 - fix: support GitHub organizations in project queries (issue #7) (3 minutes ago)
 ## What's Being Built
 - **Features in progress:** Add create_project_status_update and get_project_status_updates tools
 
@@ -39,8 +43,8 @@ Deployment: development
 3. Deploy to staging
 
 ## Recent Activity
-- **2026-03-02**: 6e1c16f - chore: bump version to 1.4.2
-- **2026-03-02**: 9afcd65 - fix: support GitHub organizations in project queries (issue #7)
+- **2026-03-02**: e2ee232 - chore: bump version to 1.4.3
+- **2026-03-02**: 7437b80 - fix: support GitHub organizations in project queries (issue #7)
 - **2026-03-02**: f293235 - chore: bump version to 1.4.2
 - **2026-03-02**: 5b6e493 - test: add Vitest tests for iteration tool handlers
 - **2026-03-02**: 2f5294a - fix: correct GraphQL mutation for create_iteration_field
