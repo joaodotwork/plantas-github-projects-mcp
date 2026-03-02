@@ -754,9 +754,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Step 2: Update the field with iteration configuration
         const updateResult = await githubGraphQL<any>(
           `
-          mutation($projectId: ID!, $fieldId: ID!, $duration: Int!, $startDate: Date!, $iterations: [ProjectV2IterationFieldIterationInput!]!) {
+          mutation($fieldId: ID!, $duration: Int!, $startDate: Date!, $iterations: [ProjectV2IterationFieldConfigurationIterationInput!]!) {
             updateProjectV2Field(input: {
-              projectId: $projectId
               fieldId: $fieldId
               iterationConfiguration: {
                 duration: $duration
@@ -782,7 +781,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         `,
           {
-            projectId: input.projectId,
             fieldId: fieldId,
             duration: input.duration,
             startDate: input.startDate,
