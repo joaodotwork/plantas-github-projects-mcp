@@ -889,38 +889,78 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const result = await githubGraphQL<any>(
           `
           query($owner: String!, $number: Int!) {
-            user(login: $owner) {
-              projectV2(number: $number) {
-                id
-                title
-                number
-                fields(first: 100) {
-                  nodes {
-                    ... on ProjectV2Field {
-                      id
-                      name
-                      dataType
-                    }
-                    ... on ProjectV2IterationField {
-                      id
-                      name
-                      dataType
-                      configuration {
-                        iterations {
+            repositoryOwner(login: $owner) {
+              ... on User {
+                projectV2(number: $number) {
+                  id
+                  title
+                  number
+                  fields(first: 100) {
+                    nodes {
+                      ... on ProjectV2Field {
+                        id
+                        name
+                        dataType
+                      }
+                      ... on ProjectV2IterationField {
+                        id
+                        name
+                        dataType
+                        configuration {
+                          iterations {
+                            id
+                            title
+                            startDate
+                            duration
+                          }
+                        }
+                      }
+                      ... on ProjectV2SingleSelectField {
+                        id
+                        name
+                        dataType
+                        options {
                           id
-                          title
-                          startDate
-                          duration
+                          name
                         }
                       }
                     }
-                    ... on ProjectV2SingleSelectField {
-                      id
-                      name
-                      dataType
-                      options {
+                  }
+                }
+              }
+              ... on Organization {
+                projectV2(number: $number) {
+                  id
+                  title
+                  number
+                  fields(first: 100) {
+                    nodes {
+                      ... on ProjectV2Field {
                         id
                         name
+                        dataType
+                      }
+                      ... on ProjectV2IterationField {
+                        id
+                        name
+                        dataType
+                        configuration {
+                          iterations {
+                            id
+                            title
+                            startDate
+                            duration
+                          }
+                        }
+                      }
+                      ... on ProjectV2SingleSelectField {
+                        id
+                        name
+                        dataType
+                        options {
+                          id
+                          name
+                        }
                       }
                     }
                   }
@@ -936,7 +976,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: JSON.stringify(result.user.projectV2, null, 2),
+              text: JSON.stringify(result.repositoryOwner.projectV2, null, 2),
             },
           ],
         };
@@ -1195,14 +1235,14 @@ async function getOwnerId(owner: string): Promise<string> {
   const result = await githubGraphQL<any>(
     `
     query($login: String!) {
-      user(login: $login) {
+      repositoryOwner(login: $login) {
         id
       }
     }
   `,
     { login: owner }
   );
-  return result.user.id;
+  return result.repositoryOwner.id;
 }
 
 async function getRepositoryId(owner: string, repo: string): Promise<string> {

@@ -1,5 +1,5 @@
 # Project Context Snapshot
-**Last Updated:** 2026-02-16
+**Last Updated:** 2026-03-02
 **Project:** plantas-github-projects-mcp
 
 ## Current State
@@ -7,13 +7,9 @@ Branch: main
 Deployment: development
 
 ## Uncommitted Work
-```
- M .gitattributes
- M .gitignore
-?? .claude/
-?? .plantas.config.json
-```
+**Status:** Clean working tree
 
+**Last Commit:** 9afcd65 - fix: support GitHub organizations in project queries (issue #7) (3 minutes ago)
 ## What's Being Built
 - **Features in progress:** Add create_project_status_update and get_project_status_updates tools
 
@@ -43,6 +39,7 @@ Deployment: development
 3. Deploy to staging
 
 ## Recent Activity
+- **2026-03-02**: 9afcd65 - fix: support GitHub organizations in project queries (issue #7)
 - **2026-02-16**: dd4867b - fix: use REST API for create_milestone
 - **2026-02-07**: 3d03c4a - feat: migrate to Go architecture and port all TS tools
 - **2026-02-07**: 4e9e316 - docs: add migration guide for Go alignment
