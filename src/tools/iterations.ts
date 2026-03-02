@@ -31,16 +31,23 @@ export async function getProjectId(
   const result = await graphqlFn<any>(
     `
     query($owner: String!, $number: Int!) {
-      user(login: $owner) {
-        projectV2(number: $number) {
-          id
+      repositoryOwner(login: $owner) {
+        ... on User {
+          projectV2(number: $number) {
+            id
+          }
+        }
+        ... on Organization {
+          projectV2(number: $number) {
+            id
+          }
         }
       }
     }
   `,
     { owner, number }
   );
-  return result.user.projectV2.id;
+  return result.repositoryOwner.projectV2.id;
 }
 
 export async function getProjectItemId(

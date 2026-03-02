@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   createIterationField,
   assignIssueToIteration,
+  getProjectId,
   type GraphQLFn,
 } from "./iterations.js";
 
@@ -143,7 +144,7 @@ describe("assignIssueToIteration", () => {
         },
       })
       // getProjectId query
-      .mockResolvedValueOnce({ user: { projectV2: { id: "proj-456" } } })
+      .mockResolvedValueOnce({ repositoryOwner: { projectV2: { id: "proj-456" } } })
       // updateProjectV2ItemFieldValue mutation
       .mockResolvedValueOnce({
         updateProjectV2ItemFieldValue: { projectV2Item: { id: "item-789" } },
@@ -183,7 +184,7 @@ describe("assignIssueToIteration", () => {
           },
         },
       })
-      .mockResolvedValueOnce({ user: { projectV2: { id: "proj-1" } } })
+      .mockResolvedValueOnce({ repositoryOwner: { projectV2: { id: "proj-1" } } })
       .mockResolvedValueOnce({
         updateProjectV2ItemFieldValue: { projectV2Item: { id: "item-1" } },
       }) as unknown as GraphQLFn;
@@ -220,5 +221,51 @@ describe("assignIssueToIteration", () => {
         iterationId: "i-1",
       })
     ).rejects.toThrow("Issue #42 not found in project #5");
+  });
+});
+
+describe("getProjectId (org support)", () => {
+  it("uses repositoryOwner instead of user in the query", async () => {
+    const gql = vi.fn().mockResolvedValueOnce({
+      repositoryOwner: { projectV2: { id: "proj-org-1" } },
+    }) as unknown as GraphQLFn;
+
+    await getProjectId(gql, "netliferesearch", 3);
+
+    const { query } = captureCall(vi.mocked(gql), 0);
+    expect(query).toContain("repositoryOwner(login: $owner)");
+    expect(query).not.toContain("user(login: $owner)");
+  });
+
+  it("includes inline fragments for both User and Organization", async () => {
+    const gql = vi.fn().mockResolvedValueOnce({
+      repositoryOwner: { projectV2: { id: "proj-org-2" } },
+    }) as unknown as GraphQLFn;
+
+    await getProjectId(gql, "netliferesearch", 3);
+
+    const { query } = captureCall(vi.mocked(gql), 0);
+    expect(query).toContain("... on User");
+    expect(query).toContain("... on Organization");
+  });
+
+  it("resolves project ID for an org owner", async () => {
+    const gql = vi.fn().mockResolvedValueOnce({
+      repositoryOwner: { projectV2: { id: "proj-org-abc" } },
+    }) as unknown as GraphQLFn;
+
+    const id = await getProjectId(gql, "netliferesearch", 3);
+
+    expect(id).toBe("proj-org-abc");
+  });
+
+  it("resolves project ID for a user owner", async () => {
+    const gql = vi.fn().mockResolvedValueOnce({
+      repositoryOwner: { projectV2: { id: "proj-user-xyz" } },
+    }) as unknown as GraphQLFn;
+
+    const id = await getProjectId(gql, "octocat", 7);
+
+    expect(id).toBe("proj-user-xyz");
   });
 });
