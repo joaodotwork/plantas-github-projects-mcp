@@ -985,6 +985,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "update_item_status": {
         const input = args as unknown as UpdateItemStatusInput;
 
+        if (!input.status) {
+          throw new Error(
+            "Missing required parameter: 'status'. Provide a human-readable status value (e.g., 'Todo', 'In Progress', 'Done')."
+          );
+        }
+
         // First, get project fields to find the Status field and its options
         const projectResult = await githubGraphQL<any>(
           `
