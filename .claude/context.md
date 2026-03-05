@@ -7,15 +7,9 @@ Branch: main
 Deployment: development
 
 ## Uncommitted Work
-```
- M package-lock.json
- M package.json
-?? .claude/AI_GUIDE.md
-?? .claude/seiva-analyze.cjs
-?? .claude/sessions.json
-?? .plantas.config.json
-```
+**Status:** Clean working tree
 
+**Last Commit:** c2eb685 - chore: bump version to 1.4.4 (0 seconds ago)
 ## What's Being Built
 - **Features in progress:** Add create_project_status_update and get_project_status_updates tools
 
@@ -45,11 +39,11 @@ Deployment: development
 3. Deploy to staging
 
 ## Recent Activity
+- **2026-03-05**: c2eb685 - chore: bump version to 1.4.4
 - **2026-03-05**: 8eab1ed - refactor: extract updateItemStatus into testable module with tests
 - **2026-03-05**: 4a6bb35 - fix: validate status param in update_item_status before use (issue #11)
 - **2026-03-02**: e2ee232 - chore: bump version to 1.4.3
 - **2026-03-02**: 7437b80 - fix: support GitHub organizations in project queries (issue #7)
-- **2026-03-02**: f293235 - chore: bump version to 1.4.2
 
 ## Cost-Effective Context Strategy
 **For AI assistants:**
