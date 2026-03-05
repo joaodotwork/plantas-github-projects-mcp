@@ -5,3 +5,6 @@ dist/
 .DS_Store
 .gemini/
 github-mcp-server-fork/
+
+.claude/settings.local.json
+.claude/*.sh

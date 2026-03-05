@@ -1,5 +1,5 @@
 # Project Context Snapshot
-**Last Updated:** 2026-03-02
+**Last Updated:** 2026-03-05
 **Project:** plantas-github-projects-mcp
 
 ## Current State
@@ -7,9 +7,15 @@ Branch: main
 Deployment: development
 
 ## Uncommitted Work
-**Status:** Clean working tree
+```
+ M package-lock.json
+ M package.json
+?? .claude/AI_GUIDE.md
+?? .claude/seiva-analyze.cjs
+?? .claude/sessions.json
+?? .plantas.config.json
+```
 
-**Last Commit:** 9afcd65 - fix: support GitHub organizations in project queries (issue #7) (3 minutes ago)
 ## What's Being Built
 - **Features in progress:** Add create_project_status_update and get_project_status_updates tools
 
@@ -39,11 +45,11 @@ Deployment: development
 3. Deploy to staging
 
 ## Recent Activity
-- **2026-03-02**: 9afcd65 - fix: support GitHub organizations in project queries (issue #7)
-- **2026-02-16**: dd4867b - fix: use REST API for create_milestone
-- **2026-02-07**: 3d03c4a - feat: migrate to Go architecture and port all TS tools
-- **2026-02-07**: 4e9e316 - docs: add migration guide for Go alignment
-- **2026-02-07**: Initial Seiva context setup
+- **2026-03-05**: 8eab1ed - refactor: extract updateItemStatus into testable module with tests
+- **2026-03-05**: 4a6bb35 - fix: validate status param in update_item_status before use (issue #11)
+- **2026-03-02**: e2ee232 - chore: bump version to 1.4.3
+- **2026-03-02**: 7437b80 - fix: support GitHub organizations in project queries (issue #7)
+- **2026-03-02**: f293235 - chore: bump version to 1.4.2
 
 ## Cost-Effective Context Strategy
 **For AI assistants:**
