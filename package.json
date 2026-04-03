@@ -45,7 +45,8 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@octokit/auth-oauth-device": "^8.0.3",
-    "@octokit/graphql": "^8.1.1"
+    "@octokit/graphql": "^8.1.1",
+    "@octokit/oauth-methods": "^6.0.2"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

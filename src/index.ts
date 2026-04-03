@@ -8,7 +8,12 @@ import {
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { graphql } from "@octokit/graphql";
-import { getGitHubToken } from "./auth.js";
+import {
+  resolveAuthProvider,
+  AuthenticationError,
+  type AuthProvider,
+} from "./auth/index.js";
+import { createResilientGraphQL } from "./auth/resilient-client.js";
 import {
   createIterationField,
   assignIssueToIteration,
@@ -20,10 +25,9 @@ import {
   type UpdateItemStatusInput,
 } from "./tools/status.js";
 
-// GitHub GraphQL client
+// Auth provider and resilient GraphQL client
+let authProvider: AuthProvider;
 let githubGraphQL: typeof graphql;
-// Raw token for REST API calls (e.g., create_milestone)
-let githubToken: string;
 
 interface ProjectInput {
   owner: string;
@@ -520,13 +524,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // Handle tool calls
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  const startTime = Date.now();
 
   // Log incoming request
-  console.error(`📥 Received request: ${name}`);
-  console.error(`   Args: ${JSON.stringify(args, null, 2).substring(0, 200)}...`);
+  console.error(`📥 ${name}`);
+  console.error(`   Args: ${JSON.stringify(args, null, 2).substring(0, 300)}`);
 
   try {
-    switch (name) {
+    const result = await (async () => { switch (name) {
       case "create_project": {
         const input = args as unknown as ProjectInput;
         const result = await githubGraphQL<any>(
@@ -576,12 +581,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           body.due_on = input.dueOn;
         }
 
+        const token = await authProvider.getToken();
         const response = await fetch(
           `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/milestones`,
           {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${githubToken}`,
+              Authorization: `Bearer ${token}`,
               Accept: "application/vnd.github+json",
               "Content-Type": "application/json",
               "X-GitHub-Api-Version": "2022-11-28",
@@ -1125,7 +1131,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
+    })();
+
+    const elapsed = Date.now() - startTime;
+    const preview = result.content?.[0]?.text?.substring(0, 200) ?? "";
+    console.error(`✅ ${name} (${elapsed}ms)`);
+    console.error(`   Result: ${preview}${preview.length >= 200 ? "..." : ""}`);
+    return result;
   } catch (error: any) {
+    const elapsed = Date.now() - startTime;
+    // Provide actionable auth error messages
+    if (error instanceof AuthenticationError || error?.status === 401) {
+      const recovery =
+        authProvider.type === "pat"
+          ? "Please set a new GITHUB_TOKEN and restart the server."
+          : "Please restart the MCP server to re-authenticate.";
+      console.error(`❌ ${name} failed (${elapsed}ms): ${error.message}`);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Authentication error: ${error.message}. ${recovery}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    console.error(`❌ ${name} failed (${elapsed}ms): ${error.message}`);
     return {
       content: [
         {
@@ -1202,21 +1234,40 @@ async function getUserId(username: string): Promise<string> {
   return result.user.id;
 }
 
+// Validate token at startup with a lightweight query
+async function validateToken(gql: typeof graphql): Promise<string | null> {
+  try {
+    const result = await gql<{ viewer: { login: string } }>(
+      `query { viewer { login } }`,
+    );
+    return result.viewer.login;
+  } catch {
+    return null;
+  }
+}
+
 // Start the server
 async function main() {
   const transport = new StdioServerTransport();
 
-  // Get token (checks env var, config file, or prompts Device Flow)
-  const token = await getGitHubToken();
+  // Resolve auth provider (PAT env var → stored credentials → Device Flow)
+  authProvider = await resolveAuthProvider();
+  githubGraphQL = createResilientGraphQL(authProvider);
 
-  // Store raw token for REST API calls (e.g., create_milestone)
-  githubToken = token;
-
-  githubGraphQL = graphql.defaults({
-    headers: {
-      authorization: `token ${token}`,
-    },
-  });
+  // Validate token at startup
+  const login = await validateToken(githubGraphQL);
+  if (!login) {
+    if (authProvider.type === "pat") {
+      throw new Error(
+        "GITHUB_TOKEN is invalid or expired. Please set a new token and restart.",
+      );
+    }
+    // For OAuth, the resilient client already tried refresh.
+    // If we're here, the token and refresh both failed.
+    throw new Error(
+      "Stored credentials are invalid. Please restart to re-authenticate.",
+    );
+  }
 
   console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.error("🚀 GitHub Projects MCP Server");
@@ -1224,12 +1275,12 @@ async function main() {
   console.error("");
   console.error("📋 Server Info:");
   console.error("   Name:      github-projects-mcp");
-  console.error("   Version:   1.4.1");
+  console.error("   Version:   1.4.4");
   console.error("   Transport: stdio (stdin/stdout)");
   console.error("   Protocol:  Model Context Protocol (MCP)");
   console.error("");
   console.error("🔧 Configuration:");
-  console.error("   GitHub Token: ✅ Set");
+  console.error(`   Auth:         ${authProvider.type} (${login})`);
   console.error("   Node Version: " + process.version);
   console.error("   Platform:     " + process.platform);
   console.error("");
