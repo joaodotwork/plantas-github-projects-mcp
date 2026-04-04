@@ -577,7 +577,7 @@ const tools: Tool[] = [
 const server = new Server(
   {
     name: "github-projects-mcp",
-    version: "1.4.1",
+    version: "1.5.0",
   },
   {
     capabilities: {
@@ -1361,7 +1361,7 @@ async function main() {
   console.error("");
   console.error("📋 Server Info:");
   console.error("   Name:      github-projects-mcp");
-  console.error("   Version:   1.4.4");
+  console.error("   Version:   1.5.0");
   console.error("   Transport: stdio (stdin/stdout)");
   console.error("   Protocol:  Model Context Protocol (MCP)");
   console.error("");

@@ -1,5 +1,5 @@
 # Project Context Snapshot
-**Last Updated:** 2026-03-05
+**Last Updated:** 2026-04-04
 **Project:** plantas-github-projects-mcp
 
 ## Current State
@@ -39,11 +39,11 @@ Deployment: development
 3. Deploy to staging
 
 ## Recent Activity
+- **2026-04-04**: a02ad2d - chore: bump version to 1.5.0 and update docs
 - **2026-03-05**: c2eb685 - chore: bump version to 1.4.4
 - **2026-03-05**: 8eab1ed - refactor: extract updateItemStatus into testable module with tests
 - **2026-03-05**: 4a6bb35 - fix: validate status param in update_item_status before use (issue #11)
 - **2026-03-02**: e2ee232 - chore: bump version to 1.4.3
-- **2026-03-02**: 7437b80 - fix: support GitHub organizations in project queries (issue #7)
 
 ## Cost-Effective Context Strategy
 **For AI assistants:**

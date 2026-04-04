@@ -11,6 +11,7 @@ A Model Context Protocol (MCP) server for automating GitHub Projects v2 workflow
 - ✅ **Create Issues**: Bulk create issues with milestones and labels
 - ✅ **Add to Projects**: Automatically add issues to project boards
 - ✅ **Iteration Fields**: Create weekly/sprint iteration fields
+- ✅ **Add/Update Iterations**: Add new iterations to existing fields or update existing ones
 - ✅ **Assign Iterations**: Distribute issues across sprints
 - ✅ **Sub-issue Management**: Add, remove, and reprioritize sub-issues
 - ✅ **Update Status**: Change project item status with human-readable values
@@ -23,7 +24,8 @@ A Model Context Protocol (MCP) server for automating GitHub Projects v2 workflow
 ### Prerequisites
 
 - Node.js 20+
-- GitHub Personal Access Token with `repo` and `project` scopes
+- **Option A:** GitHub Personal Access Token (PAT) with `repo` and `project` scopes
+- **Option B:** GitHub OAuth App with Device Flow enabled (auto-refreshing tokens)
 
 ### Quick Start (Recommended)
 
@@ -50,25 +52,43 @@ npm run build
 
 ## Configuration
 
-### 1. Set up GitHub Token
+### Authentication
 
-Create a `.env` file or set environment variable:
+The server supports two authentication methods:
+
+#### Option A: Personal Access Token (simplest)
 
 ```bash
 export GITHUB_TOKEN=ghp_your_token_here
 ```
 
-### 2. Configure Claude
+#### Option B: OAuth Device Flow (recommended)
+
+Uses a GitHub OAuth App with auto-refreshing tokens stored in encrypted local storage. No need to manually manage tokens.
+
+```bash
+export GITHUB_CLIENT_ID=your_oauth_app_client_id
+export GITHUB_CLIENT_SECRET=your_oauth_app_client_secret
+```
+
+On first run, the server will prompt you to authorize via browser. Tokens are stored encrypted at `~/.config/github-projects-mcp/credentials.enc` and refresh automatically.
+
+### Configure Claude
 
 **For Claude Code (CLI):**
 ```bash
-# Using npx (Recommended)
+# With PAT
 claude mcp add github-projects --env GITHUB_TOKEN=ghp_your_token_here -- npx -y @joaodotwork/plantas-github-projects-mcp
+
+# With OAuth
+claude mcp add github-projects \
+  --env GITHUB_CLIENT_ID=your_client_id \
+  --env GITHUB_CLIENT_SECRET=your_client_secret \
+  -- npx -y @joaodotwork/plantas-github-projects-mcp
 ```
 
 **For Gemini CLI:**
 ```bash
-# Using npx
 gemini mcp add github-projects npx -e GITHUB_TOKEN=ghp_your_token_here -- -y @joaodotwork/plantas-github-projects-mcp
 ```
 
@@ -292,6 +312,55 @@ Assign an issue to a specific iteration.
   "issueNumber": 80,
   "fieldId": "PVTIF_lAHOAwJiCM4BNC20zg8J544",
   "iterationId": "bab3ba50"
+}
+```
+
+---
+
+### `add_iteration`
+
+Add a new iteration to an existing iteration field.
+
+**Parameters:**
+- `projectId` (string, required): Project node ID
+- `fieldId` (string, required): Iteration field ID
+- `title` (string, required): Iteration title (e.g., "Sprint 5")
+- `startDate` (string, required): Start date (YYYY-MM-DD)
+- `duration` (number, required): Duration in days (typically 7 or 14)
+
+**Example:**
+```typescript
+{
+  "projectId": "PVT_kwHOAwJiCM4BNC20",
+  "fieldId": "PVTIF_lAHOAwJiCM4BNC20zg8J544",
+  "title": "Phase 4: Production hardening",
+  "startDate": "2026-02-10",
+  "duration": 14
+}
+```
+
+---
+
+### `update_iteration`
+
+Update an existing iteration's title, start date, or duration.
+
+**Parameters:**
+- `projectId` (string, required): Project node ID
+- `fieldId` (string, required): Iteration field ID
+- `iterationId` (string, required): Iteration ID to update
+- `title` (string, optional): New title
+- `startDate` (string, optional): New start date (YYYY-MM-DD)
+- `duration` (number, optional): New duration in days
+
+**Example:**
+```typescript
+{
+  "projectId": "PVT_kwHOAwJiCM4BNC20",
+  "fieldId": "PVTIF_lAHOAwJiCM4BNC20zg8J544",
+  "iterationId": "bab3ba50",
+  "title": "Sprint 3 (extended)",
+  "duration": 14
 }
 ```
 
@@ -666,9 +735,9 @@ for (const issueData of issues) {
 
 ### "401 Unauthorized" Error
 
-- Check that your `GITHUB_TOKEN` is set correctly
-- Verify the token has `repo` and `project` scopes
-- Token format should be `ghp_...` (Personal Access Token)
+- **PAT users:** Check that `GITHUB_TOKEN` is set correctly and has `repo` and `project` scopes
+- **OAuth users:** Your token may have expired. Restart the MCP server to trigger a refresh or re-authentication
+- The server validates tokens at startup and provides actionable error messages
 
 ### "Issue not found in project" Error
 

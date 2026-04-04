@@ -6,6 +6,7 @@ This MCP server works with both **Claude Desktop** (desktop app) and **Claude Co
 
 If you're using Claude Code, use the CLI for one-command installation using `npx`:
 
+**Option A: Personal Access Token**
 ```bash
 # 1. Get GitHub token from https://github.com/settings/tokens/new
 #    Scopes needed: repo, project
@@ -14,11 +15,27 @@ If you're using Claude Code, use the CLI for one-command installation using `npx
 claude mcp add github-projects \
   --env GITHUB_TOKEN=ghp_your_token_here \
   -- npx -y @joaodotwork/plantas-github-projects-mcp
+```
 
-# 3. Verify
+**Option B: OAuth Device Flow (auto-refreshing tokens)**
+```bash
+# 1. Register a GitHub OAuth App at https://github.com/settings/developers
+#    Enable "Device Flow" in the app settings
+
+# 2. Add to Claude Code with OAuth credentials
+claude mcp add github-projects \
+  --env GITHUB_CLIENT_ID=your_client_id \
+  --env GITHUB_CLIENT_SECRET=your_client_secret \
+  -- npx -y @joaodotwork/plantas-github-projects-mcp
+
+# 3. On first run, follow the device flow prompt to authenticate in your browser
+```
+
+```bash
+# Verify
 claude mcp list
 
-# 4. Reload VS Code (Cmd+Shift+P → "Developer: Reload Window")
+# Reload VS Code (Cmd+Shift+P → "Developer: Reload Window")
 ```
 
 Done! Skip to verification below.
@@ -96,13 +113,15 @@ In Claude Desktop, start a new conversation and ask:
 
 > "What MCP tools do you have available for GitHub Projects?"
 
-You should see 15 tools:
+You should see 17 tools:
 - `create_project`
 - `create_milestone`
 - `create_issue`
 - `add_issue_to_project`
 - `create_iteration_field`
 - `assign_issue_to_iteration`
+- `add_iteration`
+- `update_iteration`
 - `add_subissue`
 - `remove_subissue`
 - `reprioritize_subissue`
@@ -211,7 +230,7 @@ In Claude Code chat panel, ask:
 
 > "What MCP tools do you have available for GitHub Projects?"
 
-You should see 13 tools listed.
+You should see 17 tools listed.
 
 ### 5. Alternative: Use Environment Variable
 
@@ -264,9 +283,9 @@ For Claude Code:
 
 ### "401 Unauthorized" Error
 
-- Token is invalid or expired
-- Token lacks required scopes (`repo`, `project`)
-- Token format should start with `ghp_`
+- **PAT:** Token is invalid or expired — generate a new one with `repo` and `project` scopes
+- **OAuth:** Restart the MCP server to trigger automatic token refresh or re-authentication
+- The server validates tokens at startup and shows actionable error messages
 
 ### "Cannot find module" Error
 
