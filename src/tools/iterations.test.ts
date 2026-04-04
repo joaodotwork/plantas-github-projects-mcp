@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import {
   createIterationField,
   assignIssueToIteration,
+  addIteration,
+  updateIteration,
   getProjectId,
   type GraphQLFn,
 } from "./iterations.js";
@@ -267,5 +269,220 @@ describe("getProjectId (org support)", () => {
     const id = await getProjectId(gql, "octocat", 7);
 
     expect(id).toBe("proj-user-xyz");
+  });
+});
+
+// Helper to create a mock that returns field config then mutation result
+function mockWithFieldConfig(
+  existingIterations: Array<{ id: string; title: string; startDate: string; duration: number }>,
+  mutationResult: any,
+) {
+  return vi.fn()
+    // getIterationFieldConfig query
+    .mockResolvedValueOnce({
+      node: {
+        fields: {
+          nodes: [
+            {
+              id: "field-abc",
+              configuration: {
+                duration: 7,
+                startDate: "2026-01-01",
+                iterations: existingIterations,
+                completedIterations: [],
+              },
+            },
+          ],
+        },
+      },
+    })
+    // updateProjectV2Field mutation
+    .mockResolvedValueOnce(mutationResult) as unknown as GraphQLFn;
+}
+
+describe("addIteration", () => {
+  it("fetches existing iterations and appends the new one", async () => {
+    const existing = [
+      { id: "iter-1", title: "Sprint 1", startDate: "2026-01-01", duration: 7 },
+    ];
+    const gql = mockWithFieldConfig(existing, {
+      updateProjectV2Field: {
+        projectV2Field: {
+          id: "field-abc",
+          name: "Sprint",
+          configuration: {
+            iterations: [
+              ...existing,
+              { id: "iter-2", title: "Sprint 2", startDate: "2026-01-08", duration: 7 },
+            ],
+          },
+        },
+      },
+    });
+
+    await addIteration(gql, {
+      projectId: "proj-xyz",
+      fieldId: "field-abc",
+      title: "Sprint 2",
+      startDate: "2026-01-08",
+      duration: 7,
+    });
+
+    const { variables } = captureCall(vi.mocked(gql), 1);
+    expect((variables.iterations as any[])).toHaveLength(2);
+    expect((variables.iterations as any[])[0]).toEqual({
+      title: "Sprint 1",
+      startDate: "2026-01-01",
+      duration: 7,
+    });
+    expect((variables.iterations as any[])[1]).toEqual({
+      title: "Sprint 2",
+      startDate: "2026-01-08",
+      duration: 7,
+    });
+  });
+
+  it("preserves field-level duration and startDate from config", async () => {
+    const gql = mockWithFieldConfig([], {
+      updateProjectV2Field: {
+        projectV2Field: {
+          id: "field-abc",
+          name: "Sprint",
+          configuration: { iterations: [] },
+        },
+      },
+    });
+
+    await addIteration(gql, {
+      projectId: "proj-xyz",
+      fieldId: "field-abc",
+      title: "Sprint 1",
+      startDate: "2026-03-01",
+      duration: 14,
+    });
+
+    const { variables } = captureCall(vi.mocked(gql), 1);
+    expect(variables.duration).toBe(7);
+    expect(variables.startDate).toBe("2026-01-01");
+  });
+
+  it("throws when field is not found", async () => {
+    const gql = vi.fn().mockResolvedValueOnce({
+      node: {
+        fields: {
+          nodes: [
+            {
+              id: "other-field",
+              configuration: {
+                duration: 7,
+                startDate: "2026-01-01",
+                iterations: [],
+                completedIterations: [],
+              },
+            },
+          ],
+        },
+      },
+    }) as unknown as GraphQLFn;
+
+    await expect(
+      addIteration(gql, {
+        projectId: "proj-xyz",
+        fieldId: "field-missing",
+        title: "Sprint 1",
+        startDate: "2026-01-01",
+        duration: 7,
+      }),
+    ).rejects.toThrow("Iteration field field-missing not found in project");
+  });
+});
+
+describe("updateIteration", () => {
+  it("updates only the specified fields on the target iteration", async () => {
+    const existing = [
+      { id: "iter-1", title: "Sprint 1", startDate: "2026-01-01", duration: 7 },
+      { id: "iter-2", title: "Sprint 2", startDate: "2026-01-08", duration: 7 },
+    ];
+    const gql = mockWithFieldConfig(existing, {
+      updateProjectV2Field: {
+        projectV2Field: {
+          id: "field-abc",
+          name: "Sprint",
+          configuration: { iterations: existing },
+        },
+      },
+    });
+
+    await updateIteration(gql, {
+      projectId: "proj-xyz",
+      fieldId: "field-abc",
+      iterationId: "iter-2",
+      title: "Sprint 2 (extended)",
+      duration: 14,
+    });
+
+    const { variables } = captureCall(vi.mocked(gql), 1);
+    expect((variables.iterations as any[])).toHaveLength(2);
+    // First iteration unchanged
+    expect((variables.iterations as any[])[0]).toEqual({
+      id: "iter-1",
+      title: "Sprint 1",
+      startDate: "2026-01-01",
+      duration: 7,
+    });
+    // Second iteration updated
+    expect((variables.iterations as any[])[1]).toEqual({
+      id: "iter-2",
+      title: "Sprint 2 (extended)",
+      startDate: "2026-01-08",
+      duration: 14,
+    });
+  });
+
+  it("throws when iteration is not found", async () => {
+    const gql = mockWithFieldConfig(
+      [{ id: "iter-1", title: "Sprint 1", startDate: "2026-01-01", duration: 7 }],
+      {},
+    );
+
+    await expect(
+      updateIteration(gql, {
+        projectId: "proj-xyz",
+        fieldId: "field-abc",
+        iterationId: "iter-missing",
+        title: "Nope",
+      }),
+    ).rejects.toThrow("Iteration iter-missing not found in field");
+  });
+
+  it("keeps original values when optional fields are omitted", async () => {
+    const existing = [
+      { id: "iter-1", title: "Sprint 1", startDate: "2026-01-01", duration: 7 },
+    ];
+    const gql = mockWithFieldConfig(existing, {
+      updateProjectV2Field: {
+        projectV2Field: {
+          id: "field-abc",
+          name: "Sprint",
+          configuration: { iterations: existing },
+        },
+      },
+    });
+
+    await updateIteration(gql, {
+      projectId: "proj-xyz",
+      fieldId: "field-abc",
+      iterationId: "iter-1",
+      title: "Sprint 1 renamed",
+      // startDate and duration omitted
+    });
+
+    const { variables } = captureCall(vi.mocked(gql), 1);
+    expect((variables.iterations as any[])[0]).toEqual({
+      id: "iter-1",
+      title: "Sprint 1 renamed",
+      startDate: "2026-01-01",
+      duration: 7,
+    });
   });
 });
