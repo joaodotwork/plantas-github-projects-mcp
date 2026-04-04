@@ -12,8 +12,12 @@ import { getGitHubToken } from "./auth.js";
 import {
   createIterationField,
   assignIssueToIteration,
+  addIteration,
+  updateIteration,
   type IterationInput,
   type AssignIterationInput,
+  type AddIterationInput,
+  type UpdateIterationInput,
 } from "./tools/iterations.js";
 import {
   updateItemStatus,
@@ -497,6 +501,72 @@ const tools: Tool[] = [
       required: ["projectId"],
     },
   },
+  {
+    name: "add_iteration",
+    description:
+      "Add a new iteration to an existing iteration field on a ProjectsV2. Fetches current iterations and appends the new one.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: {
+          type: "string",
+          description: "Project node ID (e.g., PVT_kwHOAwJiCM4BNC20)",
+        },
+        fieldId: {
+          type: "string",
+          description: "Iteration field ID",
+        },
+        title: {
+          type: "string",
+          description: "Iteration title (e.g., 'Sprint 5', 'Phase 4: Production hardening')",
+        },
+        startDate: {
+          type: "string",
+          description: "Start date in YYYY-MM-DD format",
+        },
+        duration: {
+          type: "number",
+          description: "Duration in days (typically 7 or 14)",
+        },
+      },
+      required: ["projectId", "fieldId", "title", "startDate", "duration"],
+    },
+  },
+  {
+    name: "update_iteration",
+    description:
+      "Update an existing iteration's title, start date, or duration on a ProjectsV2 iteration field.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: {
+          type: "string",
+          description: "Project node ID (e.g., PVT_kwHOAwJiCM4BNC20)",
+        },
+        fieldId: {
+          type: "string",
+          description: "Iteration field ID",
+        },
+        iterationId: {
+          type: "string",
+          description: "Iteration ID to update",
+        },
+        title: {
+          type: "string",
+          description: "New iteration title (optional)",
+        },
+        startDate: {
+          type: "string",
+          description: "New start date in YYYY-MM-DD format (optional)",
+        },
+        duration: {
+          type: "number",
+          description: "New duration in days (optional)",
+        },
+      },
+      required: ["projectId", "fieldId", "iterationId"],
+    },
+  },
 ];
 
 // Server implementation
@@ -720,6 +790,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const item = await assignIssueToIteration(githubGraphQL, input);
         return {
           content: [{ type: "text", text: JSON.stringify(item, null, 2) }],
+        };
+      }
+
+      case "add_iteration": {
+        const input = args as unknown as AddIterationInput;
+        const field = await addIteration(githubGraphQL, input);
+        return {
+          content: [{ type: "text", text: JSON.stringify(field, null, 2) }],
+        };
+      }
+
+      case "update_iteration": {
+        const input = args as unknown as UpdateIterationInput;
+        const field = await updateIteration(githubGraphQL, input);
+        return {
+          content: [{ type: "text", text: JSON.stringify(field, null, 2) }],
         };
       }
 
