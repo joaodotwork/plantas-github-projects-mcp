@@ -71,7 +71,7 @@ export GITHUB_CLIENT_ID=your_oauth_app_client_id
 export GITHUB_CLIENT_SECRET=your_oauth_app_client_secret
 ```
 
-On first run, the server will prompt you to authorize via browser. Tokens are stored encrypted at `~/.config/github-projects-mcp/credentials.enc` and refresh automatically.
+On first tool call, the server will prompt you to authorize via browser. Authentication is deferred until needed, so the server starts instantly — no risk of timeouts in Claude Code or other MCP hosts. Tokens are stored encrypted at `~/.config/github-projects-mcp/credentials.enc` and refresh automatically.
 
 ### Configure Claude
 
@@ -737,7 +737,7 @@ for (const issueData of issues) {
 
 - **PAT users:** Check that `GITHUB_TOKEN` is set correctly and has `repo` and `project` scopes
 - **OAuth users:** Your token may have expired. Restart the MCP server to trigger a refresh or re-authentication
-- The server validates tokens at startup and provides actionable error messages
+- The server validates tokens on first tool call and provides actionable error messages
 
 ### "Issue not found in project" Error
 

@@ -28,7 +28,7 @@ claude mcp add github-projects \
   --env GITHUB_CLIENT_SECRET=your_client_secret \
   -- npx -y @joaodotwork/plantas-github-projects-mcp
 
-# 3. On first run, follow the device flow prompt to authenticate in your browser
+# 3. On first tool call, follow the device flow prompt to authenticate in your browser
 ```
 
 ```bash
@@ -285,7 +285,7 @@ For Claude Code:
 
 - **PAT:** Token is invalid or expired — generate a new one with `repo` and `project` scopes
 - **OAuth:** Restart the MCP server to trigger automatic token refresh or re-authentication
-- The server validates tokens at startup and shows actionable error messages
+- The server validates tokens on first tool call and shows actionable error messages
 
 ### "Cannot find module" Error
 
