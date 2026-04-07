@@ -54,7 +54,7 @@ export class DeviceFlowProvider implements AuthProvider {
 
     try {
       const response = await octokitRefreshToken({
-        clientType: "oauth-app",
+        clientType: "github-app",
         clientId: this.clientId,
         clientSecret: this.clientSecret,
         refreshToken: this.credentials.refreshToken,
