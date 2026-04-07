@@ -4,6 +4,21 @@ import type { AuthProvider, StoredCredentials } from "./types.js";
 import { AuthenticationError } from "./types.js";
 import { saveCredentials, clearCredentials } from "./token-store.js";
 
+/**
+ * Thrown when device flow auth has been initiated but the user hasn't
+ * completed browser authorization yet. Contains the verification URL
+ * and user code so the caller can surface them to the user.
+ */
+export class DeviceFlowPendingError extends Error {
+  constructor(
+    public readonly verificationUri: string,
+    public readonly userCode: string,
+  ) {
+    super("Device flow authentication pending — waiting for browser authorization.");
+    this.name = "DeviceFlowPendingError";
+  }
+}
+
 export class DeviceFlowProvider implements AuthProvider {
   readonly type = "oauth-device" as const;
   private credentials: StoredCredentials;
@@ -92,12 +107,31 @@ export class DeviceFlowProvider implements AuthProvider {
   }
 
   /**
-   * Run the GitHub Device Flow to get a new token.
+   * Pending device flow promise — shared across calls so multiple tool
+   * invocations don't start separate device flows.
+   */
+  private static pendingAuth: Promise<DeviceFlowProvider> | null = null;
+
+  /**
+   * Kick off the GitHub Device Flow and return immediately with a
+   * DeviceFlowPendingError containing the verification URL and user code.
+   *
+   * The polling continues in the background. Subsequent calls to
+   * `authenticate()` await the same promise — if the user has completed
+   * browser auth, the promise resolves immediately.
    */
   static async authenticate(
     clientId: string,
     clientSecret: string,
   ): Promise<DeviceFlowProvider> {
+    // If a device flow is already in flight, check if it has resolved
+    if (DeviceFlowProvider.pendingAuth) {
+      return DeviceFlowProvider.pendingAuth;
+    }
+
+    let verificationUri = "";
+    let userCode = "";
+
     console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.error("🔐 GitHub Authentication Required");
     console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -108,6 +142,8 @@ export class DeviceFlowProvider implements AuthProvider {
       clientId,
       scopes: ["read:project", "project", "repo"],
       onVerification(verification) {
+        verificationUri = verification.verification_uri;
+        userCode = verification.user_code;
         console.error("");
         console.error(`1. Open: ${verification.verification_uri}`);
         console.error(`2. Enter code: ${verification.user_code}`);
@@ -116,19 +152,45 @@ export class DeviceFlowProvider implements AuthProvider {
       },
     });
 
-    const tokenAuth = await auth({ type: "oauth" });
+    // Start polling in the background — do NOT await here
+    DeviceFlowProvider.pendingAuth = (async () => {
+      try {
+        const tokenAuth = await auth({ type: "oauth" });
 
-    const credentials: StoredCredentials = {
-      token: tokenAuth.token,
-      refreshToken: (tokenAuth as any).refreshToken ?? "",
-      expiresAt: (tokenAuth as any).expiresAt ?? "",
-      refreshTokenExpiresAt: (tokenAuth as any).refreshTokenExpiresAt ?? "",
-      clientId,
-    };
+        const credentials: StoredCredentials = {
+          token: tokenAuth.token,
+          refreshToken: (tokenAuth as any).refreshToken ?? "",
+          expiresAt: (tokenAuth as any).expiresAt ?? "",
+          refreshTokenExpiresAt: (tokenAuth as any).refreshTokenExpiresAt ?? "",
+          clientId,
+        };
 
-    saveCredentials(credentials);
-    console.error("✅ Authentication successful! Token saved.");
+        saveCredentials(credentials);
+        console.error("✅ Authentication successful! Token saved.");
 
-    return new DeviceFlowProvider(credentials, clientId, clientSecret);
+        return new DeviceFlowProvider(credentials, clientId, clientSecret);
+      } catch (error) {
+        // Reset so the next call can start a fresh flow
+        DeviceFlowProvider.pendingAuth = null;
+        throw error;
+      }
+    })();
+
+    // Give the onVerification callback a moment to fire (it's called
+    // synchronously by createOAuthDeviceAuth before the first poll)
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Throw with the URL/code so the tool handler can surface them
+    throw new DeviceFlowPendingError(
+      verificationUri || "https://github.com/login/device",
+      userCode || "(check server logs)",
+    );
+  }
+
+  /**
+   * Reset any in-flight device flow (for testing).
+   */
+  static resetPendingAuth(): void {
+    DeviceFlowProvider.pendingAuth = null;
   }
 }

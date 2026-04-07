@@ -13,6 +13,7 @@ import {
   AuthenticationError,
   type AuthProvider,
 } from "./auth/index.js";
+import { DeviceFlowPendingError } from "./auth/device-flow-provider.js";
 import { createResilientGraphQL } from "./auth/resilient-client.js";
 import {
   createIterationField,
@@ -75,7 +76,17 @@ async function ensureAuthenticated(): Promise<void> {
     })();
   }
 
-  await authPromise;
+  try {
+    await authPromise;
+  } catch (error) {
+    if (error instanceof DeviceFlowPendingError) {
+      // Device flow is polling in the background — reset authPromise so the
+      // next tool call re-enters resolveAuthProvider, which will await the
+      // in-flight device flow poll (DeviceFlowProvider.pendingAuth).
+      authPromise = null;
+    }
+    throw error;
+  }
 }
 
 interface ProjectInput {
@@ -646,7 +657,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   console.error(`   Args: ${JSON.stringify(args, null, 2).substring(0, 300)}`);
 
   // Lazily authenticate on first tool call
-  await ensureAuthenticated();
+  try {
+    await ensureAuthenticated();
+  } catch (error) {
+    if (error instanceof DeviceFlowPendingError) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: [
+              "🔐 GitHub authentication required. Please complete the device flow:",
+              "",
+              `1. Open: ${error.verificationUri}`,
+              `2. Enter code: ${error.userCode}`,
+              "",
+              "After authorizing in the browser, call any tool again to continue.",
+            ].join("\n"),
+          },
+        ],
+        isError: true,
+      };
+    }
+    throw error;
+  }
 
   try {
     const result = await (async () => { switch (name) {
@@ -1387,7 +1420,7 @@ async function main() {
   // Connect immediately — auth is deferred to first tool call
   // This prevents the server from blocking on device flow polling,
   // which would time out in Claude Code's ~2 min bash timeout.
-  console.error("GitHub Projects MCP Server v1.5.0 starting...");
+  console.error("GitHub Projects MCP Server v1.5.2 starting...");
   console.error("Auth will be resolved on first tool call.");
 
   await server.connect(transport);
