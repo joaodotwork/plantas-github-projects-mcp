@@ -1420,7 +1420,7 @@ async function main() {
   // Connect immediately — auth is deferred to first tool call
   // This prevents the server from blocking on device flow polling,
   // which would time out in Claude Code's ~2 min bash timeout.
-  console.error("GitHub Projects MCP Server v1.5.2 starting...");
+  console.error("GitHub Projects MCP Server v1.5.3 starting...");
   console.error("Auth will be resolved on first tool call.");
 
   await server.connect(transport);

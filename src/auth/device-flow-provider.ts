@@ -129,21 +129,27 @@ export class DeviceFlowProvider implements AuthProvider {
       return DeviceFlowProvider.pendingAuth;
     }
 
-    let verificationUri = "";
-    let userCode = "";
-
     console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.error("🔐 GitHub Authentication Required");
     console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.error("No valid token found. Initiating Device Flow...");
+
+    // Use a promise to wait for the onVerification callback, which fires
+    // after the initial HTTP request to GitHub returns the device code.
+    let resolveVerification: (v: { uri: string; code: string }) => void;
+    const verificationReady = new Promise<{ uri: string; code: string }>(
+      (resolve) => { resolveVerification = resolve; },
+    );
 
     const auth = createOAuthDeviceAuth({
       clientType: "oauth-app",
       clientId,
       scopes: ["read:project", "project", "repo"],
       onVerification(verification) {
-        verificationUri = verification.verification_uri;
-        userCode = verification.user_code;
+        resolveVerification({
+          uri: verification.verification_uri,
+          code: verification.user_code,
+        });
         console.error("");
         console.error(`1. Open: ${verification.verification_uri}`);
         console.error(`2. Enter code: ${verification.user_code}`);
@@ -176,15 +182,11 @@ export class DeviceFlowProvider implements AuthProvider {
       }
     })();
 
-    // Give the onVerification callback a moment to fire (it's called
-    // synchronously by createOAuthDeviceAuth before the first poll)
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Wait for the onVerification callback to fire with the URL and code
+    const verification = await verificationReady;
 
     // Throw with the URL/code so the tool handler can surface them
-    throw new DeviceFlowPendingError(
-      verificationUri || "https://github.com/login/device",
-      userCode || "(check server logs)",
-    );
+    throw new DeviceFlowPendingError(verification.uri, verification.code);
   }
 
   /**
