@@ -29,9 +29,54 @@ import {
   type UpdateItemStatusInput,
 } from "./tools/status.js";
 
-// Auth provider and resilient GraphQL client
-let authProvider: AuthProvider;
-let githubGraphQL: typeof graphql;
+// Auth provider and resilient GraphQL client (lazily initialized).
+// Initialized to null but typed as non-null because ensureAuthenticated()
+// is always awaited before any tool handler accesses these.
+let authProvider: AuthProvider = null as any;
+let githubGraphQL: typeof graphql = null as any;
+let authResolved = false;
+let authPromise: Promise<void> | null = null;
+
+/**
+ * Lazily resolve authentication on first tool call.
+ * This avoids blocking server startup with device flow polling,
+ * which can time out in environments like Claude Code.
+ * Subsequent calls return the cached result immediately.
+ */
+async function ensureAuthenticated(): Promise<void> {
+  if (authResolved) return; // already authenticated
+
+  if (!authPromise) {
+    authPromise = (async () => {
+      authProvider = await resolveAuthProvider();
+      githubGraphQL = createResilientGraphQL(authProvider);
+
+      // Validate token with a lightweight query
+      const login = await validateToken(githubGraphQL);
+      if (!login) {
+        const providerType = authProvider.type;
+        // Reset so next call retries
+        authProvider = null as any;
+        githubGraphQL = null as any;
+        authPromise = null;
+
+        if (providerType === "pat") {
+          throw new Error(
+            "GITHUB_TOKEN is invalid or expired. Please set a new token and restart.",
+          );
+        }
+        throw new Error(
+          "Stored credentials are invalid. Please restart to re-authenticate.",
+        );
+      }
+
+      authResolved = true;
+      console.error(`Authenticated as ${login} (${authProvider.type})`);
+    })();
+  }
+
+  await authPromise;
+}
 
 interface ProjectInput {
   owner: string;
@@ -599,6 +644,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // Log incoming request
   console.error(`📥 ${name}`);
   console.error(`   Args: ${JSON.stringify(args, null, 2).substring(0, 300)}`);
+
+  // Lazily authenticate on first tool call
+  await ensureAuthenticated();
 
   try {
     const result = await (async () => { switch (name) {
@@ -1336,61 +1384,15 @@ async function validateToken(gql: typeof graphql): Promise<string | null> {
 async function main() {
   const transport = new StdioServerTransport();
 
-  // Resolve auth provider (PAT env var → stored credentials → Device Flow)
-  authProvider = await resolveAuthProvider();
-  githubGraphQL = createResilientGraphQL(authProvider);
-
-  // Validate token at startup
-  const login = await validateToken(githubGraphQL);
-  if (!login) {
-    if (authProvider.type === "pat") {
-      throw new Error(
-        "GITHUB_TOKEN is invalid or expired. Please set a new token and restart.",
-      );
-    }
-    // For OAuth, the resilient client already tried refresh.
-    // If we're here, the token and refresh both failed.
-    throw new Error(
-      "Stored credentials are invalid. Please restart to re-authenticate.",
-    );
-  }
-
-  console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.error("🚀 GitHub Projects MCP Server");
-  console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.error("");
-  console.error("📋 Server Info:");
-  console.error("   Name:      github-projects-mcp");
-  console.error("   Version:   1.5.0");
-  console.error("   Transport: stdio (stdin/stdout)");
-  console.error("   Protocol:  Model Context Protocol (MCP)");
-  console.error("");
-  console.error("🔧 Configuration:");
-  console.error(`   Auth:         ${authProvider.type} (${login})`);
-  console.error("   Node Version: " + process.version);
-  console.error("   Platform:     " + process.platform);
-  console.error("");
-  console.error(`🛠️  Available Tools (${tools.length}):`);
-  tools.forEach((tool, index) => {
-    console.error(`   ${index + 1}. ${tool.name}`);
-  });
-  console.error("");
-  console.error("ℹ️  Transport Details:");
-  console.error("   • MCP uses stdio (not HTTP/SSE)");
-  console.error("   • Communication via stdin/stdout pipes");
-  console.error("   • No port binding required");
-  console.error("   • Claude Desktop/Code manages the process");
-  console.error("");
-  console.error("✅ Server ready and waiting for requests...");
-  console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.error("");
+  // Connect immediately — auth is deferred to first tool call
+  // This prevents the server from blocking on device flow polling,
+  // which would time out in Claude Code's ~2 min bash timeout.
+  console.error("GitHub Projects MCP Server v1.5.0 starting...");
+  console.error("Auth will be resolved on first tool call.");
 
   await server.connect(transport);
 
-  // Log when server starts processing
-  console.error("🔌 Connected to MCP client");
-  console.error("📡 Listening for tool requests on stdio...");
-  console.error("");
+  console.error("Connected to MCP client, listening for tool requests.");
 }
 
 main().catch((error) => {

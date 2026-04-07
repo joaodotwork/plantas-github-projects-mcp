@@ -104,8 +104,9 @@ export class DeviceFlowProvider implements AuthProvider {
     console.error("No valid token found. Initiating Device Flow...");
 
     const auth = createOAuthDeviceAuth({
-      clientType: "github-app",
+      clientType: "oauth-app",
       clientId,
+      scopes: ["read:project", "project", "repo"],
       onVerification(verification) {
         console.error("");
         console.error(`1. Open: ${verification.verification_uri}`);
