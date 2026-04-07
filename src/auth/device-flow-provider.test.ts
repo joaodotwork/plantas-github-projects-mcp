@@ -84,7 +84,7 @@ describe("DeviceFlowProvider", () => {
 
       expect(token).toBe("ghu_refreshed");
       expect(mockRefreshToken).toHaveBeenCalledWith({
-        clientType: "github-app",
+        clientType: "oauth-app",
         clientId: "Iv1.test",
         clientSecret: "my-secret",
         refreshToken: "ghr_refresh_token",
