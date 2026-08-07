@@ -123,7 +123,7 @@ export async function createIterationField(
   // Step 2: Update the field with iteration configuration
   const updateResult = await graphqlFn<any>(
     `
-    mutation($fieldId: ID!, $duration: Int!, $startDate: Date!, $iterations: [ProjectV2IterationFieldConfigurationIterationInput!]!) {
+    mutation($fieldId: ID!, $duration: Int!, $startDate: Date!, $iterations: ${ITERATIONS_ARG_TYPE}) {
       updateProjectV2Field(input: {
         fieldId: $fieldId
         iterationConfiguration: {
@@ -184,26 +184,52 @@ interface IterationConfig {
   duration: number;
 }
 
+/**
+ * GraphQL type of the `iterations` argument on ProjectV2IterationFieldConfigurationInput.
+ *
+ * Per GitHub's published schema (docs.github.com/public/fpt/schema.docs.graphql):
+ *   input ProjectV2IterationFieldConfigurationInput {
+ *     duration: Int!
+ *     iterations: [ProjectV2Iteration!]!
+ *     startDate: Date!
+ *   }
+ *
+ * Note `ProjectV2Iteration` has exactly three fields — duration, startDate, title —
+ * and NO `id`. Sending an `id` is a query error.
+ */
+const ITERATIONS_ARG_TYPE = "[ProjectV2Iteration!]!";
+
+/** A single item's iteration assignment, captured before a destructive field update. */
+export interface IterationAssignment {
+  itemId: string;
+  /** Human-readable label for diagnostics only. */
+  label: string;
+  iterationTitle: string;
+}
+
 async function getIterationFieldConfig(
   graphqlFn: GraphQLFn,
   projectId: string,
   fieldId: string,
-): Promise<{ duration: number; startDate: string; iterations: IterationConfig[] }> {
+): Promise<{
+  name: string;
+  duration: number;
+  startDate: string;
+  iterations: IterationConfig[];
+}> {
   const result = await graphqlFn<any>(
     `
     query($projectId: ID!) {
       node(id: $projectId) {
         ... on ProjectV2 {
-          field(name: "") {
-            __typename
-          }
           fields(first: 100) {
             nodes {
               ... on ProjectV2IterationField {
                 id
+                name
                 configuration {
                   duration
-                  startDate
+                  startDay
                   iterations {
                     id
                     title
@@ -234,14 +260,123 @@ async function getIterationFieldConfig(
     throw new Error(`Iteration field ${fieldId} not found in project`);
   }
 
+  // `completedIterations` comes back newest-first; the mutation expects chronological
+  // order, and completed iterations precede active ones.
+  const completed = [...field.configuration.completedIterations].reverse();
+  const iterations = [...completed, ...field.configuration.iterations];
+
   return {
+    name: field.name,
     duration: field.configuration.duration,
-    startDate: field.configuration.startDate,
-    iterations: [
-      ...field.configuration.iterations,
-      ...field.configuration.completedIterations,
-    ],
+    // The input requires `startDate` ("the start date for the first iteration"), but the
+    // output type exposes `startDay` (a day-of-week integer) and no equivalent date. Derive
+    // it from the earliest iteration instead.
+    startDate: iterations[0]?.startDate ?? "",
+    iterations,
   };
+}
+
+/**
+ * Capture every item's iteration assignment before a field update.
+ *
+ * Required because `updateProjectV2Field` regenerates the ID of every iteration — even
+ * ones resubmitted byte-identically — which detaches all item values. Assignments are
+ * keyed by iteration *title*, the only stable identifier across the mutation.
+ */
+export async function snapshotIterationAssignments(
+  graphqlFn: GraphQLFn,
+  projectId: string,
+  fieldName: string,
+): Promise<IterationAssignment[]> {
+  const out: IterationAssignment[] = [];
+  let cursor: string | null = null;
+
+  for (;;) {
+    const result: any = await graphqlFn<any>(
+      `
+      query($projectId: ID!, $cursor: String, $fieldName: String!) {
+        node(id: $projectId) {
+          ... on ProjectV2 {
+            items(first: 100, after: $cursor) {
+              pageInfo { hasNextPage endCursor }
+              nodes {
+                id
+                content {
+                  __typename
+                  ... on Issue { number }
+                  ... on PullRequest { number }
+                  ... on DraftIssue { title }
+                }
+                fieldValueByName(name: $fieldName) {
+                  ... on ProjectV2ItemFieldIterationValue { title }
+                }
+              }
+            }
+          }
+        }
+      }
+    `,
+      { projectId, cursor, fieldName },
+    );
+
+    const page = result.node.items;
+    for (const node of page.nodes) {
+      if (!node.fieldValueByName?.title) continue;
+      const content = node.content ?? {};
+      out.push({
+        itemId: node.id,
+        label:
+          content.number != null
+            ? `${content.__typename} #${content.number}`
+            : (content.title ?? node.id),
+        iterationTitle: node.fieldValueByName.title,
+      });
+    }
+
+    if (!page.pageInfo.hasNextPage) return out;
+    cursor = page.pageInfo.endCursor;
+  }
+}
+
+/** Re-apply a snapshot after the field update, mapping old titles to freshly-minted IDs. */
+export async function restoreIterationAssignments(
+  graphqlFn: GraphQLFn,
+  projectId: string,
+  fieldId: string,
+  snapshot: IterationAssignment[],
+  freshIterations: Array<{ id: string; title: string }>,
+): Promise<{ restored: number; failed: IterationAssignment[] }> {
+  const idByTitle = new Map(freshIterations.map((i) => [i.title, i.id]));
+  const failed: IterationAssignment[] = [];
+  let restored = 0;
+
+  for (const entry of snapshot) {
+    const iterationId = idByTitle.get(entry.iterationTitle);
+    if (!iterationId) {
+      failed.push(entry);
+      continue;
+    }
+    try {
+      await graphqlFn<any>(
+        `
+        mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $iterationId: String!) {
+          updateProjectV2ItemFieldValue(input: {
+            projectId: $projectId
+            itemId: $itemId
+            fieldId: $fieldId
+            value: { iterationId: $iterationId }
+          }) { projectV2Item { id } }
+        }
+      `,
+        { projectId, itemId: entry.itemId, fieldId, iterationId },
+      );
+      restored++;
+    } catch {
+      failed.push(entry);
+    }
+  }
+
+  return { restored, failed };
 }
 
 export async function addIteration(
@@ -268,9 +403,16 @@ export async function addIteration(
     },
   ];
 
+  // Capture assignments first — the mutation below detaches every one of them.
+  const snapshot = await snapshotIterationAssignments(
+    graphqlFn,
+    input.projectId,
+    config.name,
+  );
+
   const result = await graphqlFn<any>(
     `
-    mutation($fieldId: ID!, $duration: Int!, $startDate: Date!, $iterations: [ProjectV2IterationFieldConfigurationIterationInput!]!) {
+    mutation($fieldId: ID!, $duration: Int!, $startDate: Date!, $iterations: ${ITERATIONS_ARG_TYPE}) {
       updateProjectV2Field(input: {
         fieldId: $fieldId
         iterationConfiguration: {
@@ -290,6 +432,12 @@ export async function addIteration(
                 startDate
                 duration
               }
+              completedIterations {
+                id
+                title
+                startDate
+                duration
+              }
             }
           }
         }
@@ -299,12 +447,24 @@ export async function addIteration(
     {
       fieldId: input.fieldId,
       duration: config.duration,
-      startDate: config.startDate,
+      startDate: config.startDate || input.startDate,
       iterations: allIterations,
     },
   );
 
-  return result.updateProjectV2Field.projectV2Field;
+  const field = result.updateProjectV2Field.projectV2Field;
+  const restoreReport = await restoreIterationAssignments(
+    graphqlFn,
+    input.projectId,
+    input.fieldId,
+    snapshot,
+    [
+      ...(field.configuration.completedIterations ?? []),
+      ...(field.configuration.iterations ?? []),
+    ],
+  );
+
+  return { ...field, assignmentsRestored: restoreReport };
 }
 
 export async function updateIteration(
@@ -323,26 +483,41 @@ export async function updateIteration(
     throw new Error(`Iteration ${input.iterationId} not found in field`);
   }
 
+  // `ProjectV2Iteration` accepts only title/startDate/duration — never `id`.
   const allIterations = config.iterations.map((it) => {
     if (it.id === input.iterationId) {
       return {
-        id: it.id,
         title: input.title ?? it.title,
         startDate: input.startDate ?? it.startDate,
         duration: input.duration ?? it.duration,
       };
     }
     return {
-      id: it.id,
       title: it.title,
       startDate: it.startDate,
       duration: it.duration,
     };
   });
 
+  // Renaming an iteration breaks title-based restore, so remap the snapshot entries
+  // that pointed at the old title before restoring.
+  const snapshot = await snapshotIterationAssignments(
+    graphqlFn,
+    input.projectId,
+    config.name,
+  );
+  const renamedTo = input.title && input.title !== target.title ? input.title : null;
+  const adjustedSnapshot = renamedTo
+    ? snapshot.map((entry) =>
+        entry.iterationTitle === target.title
+          ? { ...entry, iterationTitle: renamedTo }
+          : entry,
+      )
+    : snapshot;
+
   const result = await graphqlFn<any>(
     `
-    mutation($fieldId: ID!, $duration: Int!, $startDate: Date!, $iterations: [ProjectV2IterationFieldConfigurationIterationInput!]!) {
+    mutation($fieldId: ID!, $duration: Int!, $startDate: Date!, $iterations: ${ITERATIONS_ARG_TYPE}) {
       updateProjectV2Field(input: {
         fieldId: $fieldId
         iterationConfiguration: {
@@ -362,6 +537,12 @@ export async function updateIteration(
                 startDate
                 duration
               }
+              completedIterations {
+                id
+                title
+                startDate
+                duration
+              }
             }
           }
         }
@@ -376,7 +557,19 @@ export async function updateIteration(
     },
   );
 
-  return result.updateProjectV2Field.projectV2Field;
+  const field = result.updateProjectV2Field.projectV2Field;
+  const restoreReport = await restoreIterationAssignments(
+    graphqlFn,
+    input.projectId,
+    input.fieldId,
+    adjustedSnapshot,
+    [
+      ...(field.configuration.completedIterations ?? []),
+      ...(field.configuration.iterations ?? []),
+    ],
+  );
+
+  return { ...field, assignmentsRestored: restoreReport };
 }
 
 export async function assignIssueToIteration(
