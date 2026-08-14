@@ -117,58 +117,52 @@ export async function getProjectItemId(
   return item.id;
 }
 
-export async function createIterationField(
-  graphqlFn: GraphQLFn,
-  input: IterationInput
-) {
-  // Step 1: Create the iteration field
-  const createResult = await graphqlFn<any>(
-    `
-    mutation($projectId: ID!, $name: String!) {
-      createProjectV2Field(input: {
-        projectId: $projectId
-        dataType: ITERATION
-        name: $name
-      }) {
-        projectV2Field {
-          ... on ProjectV2IterationField {
-            id
-            name
-          }
+/** Field shape returned by both branches of `createIterationField`. */
+const ITERATION_FIELD_SELECTION = `
+    ... on ProjectV2IterationField {
+      id
+      name
+      configuration {
+        duration
+        startDay
+        iterations {
+          id
+          title
+          startDate
+          duration
         }
       }
-    }
-  `,
-    {
-      projectId: input.projectId,
-      name: input.fieldName,
-    }
+    }`;
+
+function isDuplicateNameError(error: unknown): boolean {
+  return /name has already been taken/i.test(
+    error instanceof Error ? error.message : String(error),
   );
+}
 
-  const fieldId = createResult.createProjectV2Field.projectV2Field.id;
-
-  // Step 2: Update the field with iteration configuration
-  const updateResult = await graphqlFn<any>(
+/**
+ * Locate an iteration field by name, for recovering from a stranded create.
+ * Returns null when no field of that name exists.
+ */
+async function findIterationFieldByName(
+  graphqlFn: GraphQLFn,
+  projectId: string,
+  fieldName: string,
+): Promise<{ id: string; iterationCount: number } | null> {
+  const result = await graphqlFn<any>(
     `
-    mutation($fieldId: ID!, $duration: Int!, $startDate: Date!, $iterations: ${ITERATIONS_ARG_TYPE}) {
-      updateProjectV2Field(input: {
-        fieldId: $fieldId
-        iterationConfiguration: {
-          duration: $duration
-          startDate: $startDate
-          iterations: $iterations
-        }
-      }) {
-        projectV2Field {
-          ... on ProjectV2IterationField {
-            id
-            name
-            configuration {
-              iterations {
+    query($projectId: ID!) {
+      node(id: $projectId) {
+        ... on ProjectV2 {
+          fields(first: 100) {
+            nodes {
+              ... on ProjectV2IterationField {
                 id
-                title
-                startDate
-                duration
+                name
+                configuration {
+                  iterations { id }
+                  completedIterations { id }
+                }
               }
             }
           }
@@ -176,15 +170,113 @@ export async function createIterationField(
       }
     }
   `,
-    {
-      fieldId,
-      duration: input.duration,
-      startDate: input.startDate,
-      iterations: input.iterations,
-    }
+    { projectId },
   );
 
-  return updateResult.updateProjectV2Field.projectV2Field;
+  const field = result.node?.fields?.nodes?.find(
+    (n: any) => n?.name === fieldName,
+  );
+  if (!field) return null;
+
+  return {
+    id: field.id,
+    iterationCount:
+      (field.configuration?.iterations?.length ?? 0) +
+      (field.configuration?.completedIterations?.length ?? 0),
+  };
+}
+
+/**
+ * Create an iteration field with its iterations in a single mutation.
+ *
+ * Previously this was create-then-configure. When the second call failed — which it always
+ * did, while the payload named a nonexistent input type — the field survived empty and the
+ * retry dead-ended on "Name has already been taken" (#21, #22). `CreateProjectV2FieldInput`
+ * accepts `iterationConfiguration` (confirmed by live introspection), so the field and its
+ * iterations are now created atomically: either both, or neither.
+ *
+ * For projects still holding a field stranded by the old code path, a duplicate-name failure
+ * falls back to adopting that field — but only while it has no iterations, since configuring
+ * a populated field would regenerate its iteration IDs and detach every assignment.
+ */
+export async function createIterationField(
+  graphqlFn: GraphQLFn,
+  input: IterationInput
+) {
+  try {
+    const result = await graphqlFn<any>(
+      `
+      mutation($projectId: ID!, $name: String!, $duration: Int!, $startDate: Date!, $iterations: ${ITERATIONS_ARG_TYPE}) {
+        createProjectV2Field(input: {
+          projectId: $projectId
+          dataType: ITERATION
+          name: $name
+          iterationConfiguration: {
+            duration: $duration
+            startDate: $startDate
+            iterations: $iterations
+          }
+        }) {
+          projectV2Field {${ITERATION_FIELD_SELECTION}
+          }
+        }
+      }
+    `,
+      {
+        projectId: input.projectId,
+        name: input.fieldName,
+        duration: input.duration,
+        startDate: input.startDate,
+        iterations: input.iterations,
+      }
+    );
+
+    return result.createProjectV2Field.projectV2Field;
+  } catch (error) {
+    if (!isDuplicateNameError(error)) throw error;
+
+    const existing = await findIterationFieldByName(
+      graphqlFn,
+      input.projectId,
+      input.fieldName,
+    );
+    if (!existing) throw error;
+
+    if (existing.iterationCount > 0) {
+      throw new Error(
+        `Iteration field '${input.fieldName}' already exists with iterations. ` +
+          `Configuring it would regenerate every iteration ID and detach all item ` +
+          `assignments — use add_iteration or update_iteration instead.`,
+      );
+    }
+
+    const configured = await graphqlFn<any>(
+      `
+      mutation($fieldId: ID!, $duration: Int!, $startDate: Date!, $iterations: ${ITERATIONS_ARG_TYPE}) {
+        updateProjectV2Field(input: {
+          fieldId: $fieldId
+          iterationConfiguration: {
+            duration: $duration
+            startDate: $startDate
+            iterations: $iterations
+          }
+        }) {
+          projectV2Field {${ITERATION_FIELD_SELECTION}
+          }
+        }
+      }
+    `,
+      {
+        fieldId: existing.id,
+        duration: input.duration,
+        startDate: input.startDate,
+        iterations: input.iterations,
+      },
+    );
+
+    // Flagged so callers can tell an adopted field from a freshly created one.
+    return { ...configured.updateProjectV2Field.projectV2Field, adopted: true };
+  }
 }
 
 export interface AddIterationInput {

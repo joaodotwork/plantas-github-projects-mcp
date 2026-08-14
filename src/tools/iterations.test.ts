@@ -15,124 +15,190 @@ function captureCall(mock: ReturnType<typeof vi.fn>, callIndex: number) {
 }
 
 describe("createIterationField", () => {
-  it("step 2 mutation does not declare or pass projectId", async () => {
-    const gql = vi.fn()
-      .mockResolvedValueOnce({
-        createProjectV2Field: { projectV2Field: { id: "field-abc" } },
-      })
-      .mockResolvedValueOnce({
-        updateProjectV2Field: {
-          projectV2Field: {
-            id: "field-abc",
-            name: "Sprint",
-            configuration: { iterations: [] },
-          },
-        },
-      }) as unknown as GraphQLFn;
+  const INPUT = {
+    projectId: "proj-xyz",
+    fieldName: "Sprint",
+    duration: 7,
+    startDate: "2026-03-02",
+    iterations: [{ title: "Sprint 1", startDate: "2026-03-02", duration: 7 }],
+  };
 
-    await createIterationField(gql, {
+  function createdField(iterations: unknown[] = []) {
+    return {
+      createProjectV2Field: {
+        projectV2Field: { id: "field-abc", name: "Sprint", configuration: { iterations } },
+      },
+    };
+  }
+
+  // Regression for #21/#22: this used to be create-then-configure. When step 2 failed the
+  // field survived empty, and the retry died with "Name has already been taken". The live
+  // schema accepts `iterationConfiguration` on CreateProjectV2FieldInput, so one call does it.
+  it("creates the field and its iterations in a single mutation", async () => {
+    const gql = vi.fn().mockResolvedValueOnce(createdField(INPUT.iterations)) as unknown as GraphQLFn;
+
+    await createIterationField(gql, INPUT);
+
+    expect(vi.mocked(gql)).toHaveBeenCalledTimes(1);
+    const { query } = captureCall(vi.mocked(gql), 0);
+    expect(query).toContain("createProjectV2Field");
+    expect(query).not.toContain("updateProjectV2Field");
+  });
+
+  it("passes projectId, name, dataType and the iteration configuration together", async () => {
+    const gql = vi.fn().mockResolvedValueOnce(createdField(INPUT.iterations)) as unknown as GraphQLFn;
+
+    await createIterationField(gql, INPUT);
+
+    const { query, variables } = captureCall(vi.mocked(gql), 0);
+    expect(query).toContain("dataType: ITERATION");
+    expect(variables).toEqual({
       projectId: "proj-xyz",
-      fieldName: "Sprint",
+      name: "Sprint",
       duration: 7,
       startDate: "2026-03-02",
-      iterations: [{ title: "Sprint 1", startDate: "2026-03-02", duration: 7 }],
+      iterations: INPUT.iterations,
     });
-
-    const { query, variables } = captureCall(vi.mocked(gql), 1);
-
-    expect(query).not.toContain("$projectId");
-    expect(query).not.toContain("projectId:");
-    expect(variables).not.toHaveProperty("projectId");
   });
 
   // Regression: the mutation previously declared
   // `[ProjectV2IterationFieldConfigurationIterationInput!]!`, a type that does not exist in
-  // GitHub's schema. The real type, per docs.github.com/public/fpt/schema.docs.graphql, is
-  // `[ProjectV2Iteration!]!`.
-  it("step 2 mutation declares the real ProjectV2Iteration input type", async () => {
-    const gql = vi.fn()
-      .mockResolvedValueOnce({
-        createProjectV2Field: { projectV2Field: { id: "field-abc" } },
-      })
-      .mockResolvedValueOnce({
-        updateProjectV2Field: {
-          projectV2Field: {
-            id: "field-abc",
-            name: "Sprint",
-            configuration: { iterations: [] },
-          },
-        },
-      }) as unknown as GraphQLFn;
+  // GitHub's schema. The real type, confirmed by live introspection, is `[ProjectV2Iteration!]!`.
+  it("declares the real ProjectV2Iteration input type", async () => {
+    const gql = vi.fn().mockResolvedValueOnce(createdField()) as unknown as GraphQLFn;
 
-    await createIterationField(gql, {
-      projectId: "proj-xyz",
-      fieldName: "Sprint",
-      duration: 7,
-      startDate: "2026-03-02",
-      iterations: [{ title: "Sprint 1", startDate: "2026-03-02", duration: 7 }],
-    });
+    await createIterationField(gql, INPUT);
 
-    const { query } = captureCall(vi.mocked(gql), 1);
-
+    const { query } = captureCall(vi.mocked(gql), 0);
     expect(query).toContain("[ProjectV2Iteration!]!");
     expect(query).not.toContain("ProjectV2IterationFieldConfigurationIterationInput");
   });
 
-  it("step 2 mutation passes fieldId, duration, startDate, and iterations", async () => {
-    const iterations = [{ title: "Sprint 1", startDate: "2026-03-02", duration: 7 }];
+  it("returns the created field with its populated configuration", async () => {
+    const gql = vi.fn().mockResolvedValueOnce(createdField(INPUT.iterations)) as unknown as GraphQLFn;
+
+    const field = await createIterationField(gql, INPUT);
+
+    expect(field).toMatchObject({
+      id: "field-abc",
+      name: "Sprint",
+      configuration: { iterations: INPUT.iterations },
+    });
+  });
+
+  // The partial-state hazard from #21/#22: an earlier run left an empty field behind, so the
+  // retry must be able to adopt it rather than dead-ending on the duplicate name.
+  it("adopts an existing field of the same name instead of failing on the duplicate", async () => {
     const gql = vi.fn()
+      .mockRejectedValueOnce(new Error("Name has already been taken"))
+      // field lookup
       .mockResolvedValueOnce({
-        createProjectV2Field: { projectV2Field: { id: "field-created" } },
+        node: {
+          fields: {
+            nodes: [
+              { id: "field-stranded", name: "Sprint", configuration: { duration: 7, startDay: 1, iterations: [], completedIterations: [] } },
+            ],
+          },
+        },
       })
+      // configure the adopted field
       .mockResolvedValueOnce({
         updateProjectV2Field: {
           projectV2Field: {
-            id: "field-created",
+            id: "field-stranded",
             name: "Sprint",
-            configuration: { iterations },
+            configuration: { iterations: INPUT.iterations },
           },
         },
       }) as unknown as GraphQLFn;
 
-    await createIterationField(gql, {
-      projectId: "proj-xyz",
-      fieldName: "Sprint",
-      duration: 7,
-      startDate: "2026-03-02",
-      iterations,
-    });
+    const field = await createIterationField(gql, INPUT);
 
-    const { variables } = captureCall(vi.mocked(gql), 1);
-
-    expect(variables).toEqual({
-      fieldId: "field-created",
-      duration: 7,
-      startDate: "2026-03-02",
-      iterations,
-    });
+    expect(field).toMatchObject({ id: "field-stranded", adopted: true });
+    const { query, variables } = captureCall(vi.mocked(gql), 2);
+    expect(query).toContain("updateProjectV2Field");
+    expect(variables).toMatchObject({ fieldId: "field-stranded", iterations: INPUT.iterations });
   });
 
-  it("step 1 creates the field with projectId and name", async () => {
+  // Adoption must never overwrite a field that already holds iterations — that would wipe
+  // every assignment on it. Populated fields belong to add_iteration/update_iteration.
+  it("refuses to adopt a field that already has iterations", async () => {
     const gql = vi.fn()
+      .mockRejectedValueOnce(new Error("Name has already been taken"))
       .mockResolvedValueOnce({
-        createProjectV2Field: { projectV2Field: { id: "field-new" } },
-      })
-      .mockResolvedValueOnce({
-        updateProjectV2Field: {
-          projectV2Field: { id: "field-new", name: "Sprint", configuration: { iterations: [] } },
+        node: {
+          fields: {
+            nodes: [
+              {
+                id: "field-populated",
+                name: "Sprint",
+                configuration: {
+                  duration: 7,
+                  startDay: 1,
+                  iterations: [{ id: "i1", title: "Sprint 1", startDate: "2026-03-02", duration: 7 }],
+                  completedIterations: [],
+                },
+              },
+            ],
+          },
         },
       }) as unknown as GraphQLFn;
 
-    await createIterationField(gql, {
-      projectId: "proj-xyz",
-      fieldName: "Sprint",
-      duration: 7,
-      startDate: "2026-03-02",
-      iterations: [],
-    });
+    await expect(createIterationField(gql, INPUT)).rejects.toThrow(
+      /already exists with iterations/
+    );
+    // Lookup only — no mutation against the populated field.
+    expect(vi.mocked(gql)).toHaveBeenCalledTimes(2);
+  });
 
-    const { variables } = captureCall(vi.mocked(gql), 0);
-    expect(variables).toEqual({ projectId: "proj-xyz", name: "Sprint" });
+  it("refuses to adopt a field whose iterations are all completed", async () => {
+    const gql = vi.fn()
+      .mockRejectedValueOnce(new Error("Name has already been taken"))
+      .mockResolvedValueOnce({
+        node: {
+          fields: {
+            nodes: [
+              {
+                id: "field-historic",
+                name: "Sprint",
+                configuration: {
+                  duration: 7,
+                  startDay: 1,
+                  iterations: [],
+                  completedIterations: [
+                    { id: "i0", title: "Sprint 0", startDate: "2026-02-23", duration: 7 },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      }) as unknown as GraphQLFn;
+
+    await expect(createIterationField(gql, INPUT)).rejects.toThrow(
+      /already exists with iterations/
+    );
+    expect(vi.mocked(gql)).toHaveBeenCalledTimes(2);
+  });
+
+  it("rethrows a duplicate-name error when no matching field can be found", async () => {
+    const gql = vi.fn()
+      .mockRejectedValueOnce(new Error("Name has already been taken"))
+      .mockResolvedValueOnce({ node: { fields: { nodes: [] } } }) as unknown as GraphQLFn;
+
+    await expect(createIterationField(gql, INPUT)).rejects.toThrow(
+      "Name has already been taken"
+    );
+  });
+
+  it("does not swallow unrelated failures", async () => {
+    const gql = vi.fn()
+      .mockRejectedValueOnce(new Error("Resource not accessible by integration")) as unknown as GraphQLFn;
+
+    await expect(createIterationField(gql, INPUT)).rejects.toThrow(
+      "Resource not accessible by integration"
+    );
+    expect(vi.mocked(gql)).toHaveBeenCalledTimes(1);
   });
 });
 
