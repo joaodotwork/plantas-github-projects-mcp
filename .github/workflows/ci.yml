@@ -61,5 +61,10 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      # The build compiles tsconfig.build.json, which excludes *.test.ts so tests don't
+      # ship to npm. This keeps them type-checked anyway — the build used to cover that.
+      - name: Typecheck
+        run: pnpm run typecheck
+
       - name: Test
         run: pnpm test

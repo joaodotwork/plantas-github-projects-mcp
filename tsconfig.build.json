@@ -1,0 +1,9 @@
+{
+  // Build config: same compiler options, but tests are not emitted.
+  //
+  // The root tsconfig.json still includes *.test.ts so the editor and `pnpm typecheck`
+  // keep type-checking them. This one only controls what lands in dist/ — without the
+  // exclude, `files: ["dist"]` shipped 12 compiled test files to npm.
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
+}
