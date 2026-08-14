@@ -46,8 +46,8 @@ npm install -g @joaodotwork/plantas-github-projects-mcp
 ```bash
 git clone https://github.com/joaodotwork/plantas-github-projects-mcp.git
 cd plants-github-projects-mcp
-npm install
-npm run build
+pnpm install
+pnpm run build
 ```
 
 ## Configuration
@@ -754,14 +754,17 @@ for (const issueData of issues) {
 ## Development
 
 ```bash
-# Install dependencies
-npm install
+# Install dependencies (this project uses pnpm)
+pnpm install
 
 # Build
-npm run build
+pnpm run build
 
 # Watch mode
-npm run dev
+pnpm run dev
+
+# Run tests
+pnpm test
 
 # Test locally
 node dist/index.js
