@@ -143,6 +143,9 @@ function isDuplicateNameError(error: unknown): boolean {
 /**
  * Locate an iteration field by name, for recovering from a stranded create.
  * Returns null when no field of that name exists.
+ *
+ * Unpaginated on purpose: a project can hold at most 50 fields in total (system fields count
+ * toward that), so `first: 100` cannot truncate.
  */
 async function findIterationFieldByName(
   graphqlFn: GraphQLFn,

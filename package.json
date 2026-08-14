@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "prepare": "pnpm run build",
+    "prepare": "tsc",
     "test": "vitest run",
     "test:watch": "vitest"
   },
