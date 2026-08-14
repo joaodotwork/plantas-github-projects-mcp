@@ -46,8 +46,8 @@ npm install -g @joaodotwork/plantas-github-projects-mcp
 ```bash
 git clone https://github.com/joaodotwork/plantas-github-projects-mcp.git
 cd plants-github-projects-mcp
-npm install
-npm run build
+pnpm install
+pnpm run build
 ```
 
 ## Configuration
@@ -181,6 +181,38 @@ Create a milestone in a repository.
 
 ---
 
+### `set_issue_milestone`
+
+Set or change the milestone on an **existing** issue or pull request. `create_issue` can attach a milestone at creation time; this handles everything after that, including removing one.
+
+**Parameters:**
+- `owner` (string, required): Repository owner
+- `repo` (string, required): Repository name
+- `issueNumber` (number, required): Issue **or pull request** number
+- `milestoneNumber` (number or null, required): Milestone number to assign, or `null` to clear the current milestone
+
+**Example:**
+```typescript
+{
+  "owner": "joaodotwork",
+  "repo": "dpds-arkiv",
+  "issueNumber": 80,
+  "milestoneNumber": 4
+}
+```
+
+**Returns:**
+```json
+{
+  "type": "Issue",
+  "number": 80,
+  "url": "https://github.com/joaodotwork/dpds-arkiv/issues/80",
+  "milestone": { "number": 4, "title": "Epic 1: GitHub Metadata Workflow" }
+}
+```
+
+---
+
 ### `create_issue`
 
 Create an issue with optional milestone, labels, and assignees.
@@ -246,7 +278,9 @@ Add an issue to a Projects v2 board.
 
 ### `create_iteration_field`
 
-Create an iteration field with weekly sprints.
+Create an iteration field with weekly sprints. The field and its iterations are created in a single mutation, so a failure leaves nothing behind to clean up.
+
+If a field of that name already exists but is **empty** — typically stranded by a failed create on an older version — it is adopted and configured, and the result carries `"adopted": true`. If it already holds iterations, the call is refused rather than reconfigured: replacing an iteration configuration regenerates every iteration ID and would detach all item assignments. Use `add_iteration` or `update_iteration` on a populated field.
 
 **Parameters:**
 - `projectId` (string, required): Project node ID
@@ -293,17 +327,21 @@ Create an iteration field with weekly sprints.
 
 ### `assign_issue_to_iteration`
 
-Assign an issue to a specific iteration.
+Assign an issue **or pull request** to a specific iteration. The item must already be on the board.
+
+Identify the item either by number or by project item ID:
 
 **Parameters:**
-- `owner` (string, required): Repository owner
-- `repo` (string, required): Repository name
-- `projectNumber` (number, required): Project number
-- `issueNumber` (number, required): Issue number
 - `fieldId` (string, required): Iteration field ID
 - `iterationId` (string, required): Iteration ID
+- `owner` (string): Repository owner — required unless both `itemId` and `projectId` are given
+- `repo` (string): Repository name — required when looking up by number
+- `projectNumber` (number): Project number — required unless `projectId` is given
+- `issueNumber` (number): Issue **or PR** number — required unless `itemId` is given
+- `itemId` (string): Project item ID (`PVTI_...`) — skips the number lookup
+- `projectId` (string): Project node ID (`PVT_...`) — skips the project lookup
 
-**Example:**
+**Example — by number (works for issues and PRs alike):**
 ```typescript
 {
   "owner": "joaodotwork",
@@ -315,11 +353,23 @@ Assign an issue to a specific iteration.
 }
 ```
 
+**Example — by item ID (same escape hatch `update_item_status` offers):**
+```typescript
+{
+  "projectId": "PVT_kwHOAwJiCM4BUd_L",
+  "itemId": "PVTI_lAHOAwJiCM4BNC20zgYd5tc",
+  "fieldId": "PVTIF_lAHOAwJiCM4BNC20zg8J544",
+  "iterationId": "bab3ba50"
+}
+```
+
 ---
 
 ### `add_iteration`
 
 Add a new iteration to an existing iteration field.
+
+> **Assignments are preserved automatically.** GitHub has no per-iteration mutation — the whole configuration must be replaced, and that regenerates every iteration ID, detaching all item assignments. Both `add_iteration` and `update_iteration` snapshot every item→iteration value first and re-apply it by iteration title afterwards. The result includes `assignmentsRestored: { restored, failed }` so a partial restore is visible rather than silent.
 
 **Parameters:**
 - `projectId` (string, required): Project node ID
@@ -343,7 +393,7 @@ Add a new iteration to an existing iteration field.
 
 ### `update_iteration`
 
-Update an existing iteration's title, start date, or duration.
+Update an existing iteration's title, start date, or duration. Item assignments are preserved — see the note under [`add_iteration`](#add_iteration). Renaming is handled too: items on the renamed iteration are remapped to the new title rather than dropped.
 
 **Parameters:**
 - `projectId` (string, required): Project node ID
@@ -754,14 +804,17 @@ for (const issueData of issues) {
 ## Development
 
 ```bash
-# Install dependencies
-npm install
+# Install dependencies (this project uses pnpm)
+pnpm install
 
 # Build
-npm run build
+pnpm run build
 
 # Watch mode
-npm run dev
+pnpm run dev
+
+# Run tests
+pnpm test
 
 # Test locally
 node dist/index.js

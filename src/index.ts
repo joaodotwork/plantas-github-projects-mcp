@@ -29,6 +29,11 @@ import {
   updateItemStatus,
   type UpdateItemStatusInput,
 } from "./tools/status.js";
+import {
+  setIssueMilestone,
+  getMilestoneId,
+  type SetIssueMilestoneInput,
+} from "./tools/milestones.js";
 
 // Auth provider and resilient GraphQL client (lazily initialized).
 // Initialized to null but typed as non-null because ensureAuthenticated()
@@ -206,6 +211,34 @@ const tools: Tool[] = [
     },
   },
   {
+    name: "set_issue_milestone",
+    description:
+      "Set or change the milestone on an existing issue or pull request. Pass milestoneNumber: null to clear it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        owner: {
+          type: "string",
+          description: "Repository owner",
+        },
+        repo: {
+          type: "string",
+          description: "Repository name",
+        },
+        issueNumber: {
+          type: "number",
+          description: "Issue or pull request number",
+        },
+        milestoneNumber: {
+          type: ["number", "null"],
+          description:
+            "Milestone number to assign, or null to remove the current milestone",
+        },
+      },
+      required: ["owner", "repo", "issueNumber", "milestoneNumber"],
+    },
+  },
+  {
     name: "create_issue",
     description:
       "Create an issue with optional milestone and labels. Returns the issue number and URL.",
@@ -308,25 +341,37 @@ const tools: Tool[] = [
   {
     name: "assign_issue_to_iteration",
     description:
-      "Assign an issue to a specific iteration in a ProjectsV2. The issue must already be in the project.",
+      "Assign an issue or pull request to a specific iteration in a ProjectsV2. The item must already be on the board. Identify it either by number (owner + repo + issueNumber + projectNumber) or directly by project item ID (itemId + projectId, or itemId + owner + projectNumber).",
     inputSchema: {
       type: "object",
       properties: {
         owner: {
           type: "string",
-          description: "Repository owner",
+          description:
+            "Repository owner. Required unless both itemId and projectId are given.",
         },
         repo: {
           type: "string",
-          description: "Repository name",
+          description: "Repository name. Required when looking the item up by number.",
         },
         projectNumber: {
           type: "number",
-          description: "Project number (not ID)",
+          description: "Project number (not ID). Required unless projectId is given.",
         },
         issueNumber: {
           type: "number",
-          description: "Issue number",
+          description:
+            "Issue or pull request number. Required unless itemId is given.",
+        },
+        itemId: {
+          type: "string",
+          description:
+            "Project item ID (PVTI_...). Skips the number lookup when supplied.",
+        },
+        projectId: {
+          type: "string",
+          description:
+            "Project node ID (PVT_...). Skips the project lookup when supplied.",
         },
         fieldId: {
           type: "string",
@@ -337,14 +382,7 @@ const tools: Tool[] = [
           description: "Iteration ID to assign to",
         },
       },
-      required: [
-        "owner",
-        "repo",
-        "projectNumber",
-        "issueNumber",
-        "fieldId",
-        "iterationId",
-      ],
+      required: ["fieldId", "iterationId"],
     },
   },
   {
@@ -774,6 +812,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case "set_issue_milestone": {
+        const input = args as unknown as SetIssueMilestoneInput;
+        const result = await setIssueMilestone(githubGraphQL, input);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
       case "create_issue": {
         const input = args as unknown as IssueInput;
         const repoId = await getRepositoryId(input.owner, input.repo);
@@ -782,6 +828,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         let milestoneId = null;
         if (input.milestoneNumber) {
           milestoneId = await getMilestoneId(
+            githubGraphQL,
             input.owner,
             input.repo,
             input.milestoneNumber
@@ -1365,26 +1412,6 @@ async function getRepositoryId(owner: string, repo: string): Promise<string> {
     { owner, repo }
   );
   return result.repository.id;
-}
-
-async function getMilestoneId(
-  owner: string,
-  repo: string,
-  number: number
-): Promise<string> {
-  const result = await githubGraphQL<any>(
-    `
-    query($owner: String!, $repo: String!, $number: Int!) {
-      repository(owner: $owner, name: $repo) {
-        milestone(number: $number) {
-          id
-        }
-      }
-    }
-  `,
-    { owner, repo, number }
-  );
-  return result.repository.milestone.id;
 }
 
 async function getUserId(username: string): Promise<string> {
