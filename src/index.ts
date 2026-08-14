@@ -29,6 +29,11 @@ import {
   updateItemStatus,
   type UpdateItemStatusInput,
 } from "./tools/status.js";
+import {
+  setIssueMilestone,
+  getMilestoneId,
+  type SetIssueMilestoneInput,
+} from "./tools/milestones.js";
 
 // Auth provider and resilient GraphQL client (lazily initialized).
 // Initialized to null but typed as non-null because ensureAuthenticated()
@@ -203,6 +208,34 @@ const tools: Tool[] = [
         },
       },
       required: ["owner", "repo", "title"],
+    },
+  },
+  {
+    name: "set_issue_milestone",
+    description:
+      "Set or change the milestone on an existing issue or pull request. Pass milestoneNumber: null to clear it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        owner: {
+          type: "string",
+          description: "Repository owner",
+        },
+        repo: {
+          type: "string",
+          description: "Repository name",
+        },
+        issueNumber: {
+          type: "number",
+          description: "Issue or pull request number",
+        },
+        milestoneNumber: {
+          type: ["number", "null"],
+          description:
+            "Milestone number to assign, or null to remove the current milestone",
+        },
+      },
+      required: ["owner", "repo", "issueNumber", "milestoneNumber"],
     },
   },
   {
@@ -779,6 +812,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case "set_issue_milestone": {
+        const input = args as unknown as SetIssueMilestoneInput;
+        const result = await setIssueMilestone(githubGraphQL, input);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
       case "create_issue": {
         const input = args as unknown as IssueInput;
         const repoId = await getRepositoryId(input.owner, input.repo);
@@ -787,6 +828,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         let milestoneId = null;
         if (input.milestoneNumber) {
           milestoneId = await getMilestoneId(
+            githubGraphQL,
             input.owner,
             input.repo,
             input.milestoneNumber
@@ -1370,26 +1412,6 @@ async function getRepositoryId(owner: string, repo: string): Promise<string> {
     { owner, repo }
   );
   return result.repository.id;
-}
-
-async function getMilestoneId(
-  owner: string,
-  repo: string,
-  number: number
-): Promise<string> {
-  const result = await githubGraphQL<any>(
-    `
-    query($owner: String!, $repo: String!, $number: Int!) {
-      repository(owner: $owner, name: $repo) {
-        milestone(number: $number) {
-          id
-        }
-      }
-    }
-  `,
-    { owner, repo, number }
-  );
-  return result.repository.milestone.id;
 }
 
 async function getUserId(username: string): Promise<string> {

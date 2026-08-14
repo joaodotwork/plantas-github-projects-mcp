@@ -181,6 +181,38 @@ Create a milestone in a repository.
 
 ---
 
+### `set_issue_milestone`
+
+Set or change the milestone on an **existing** issue or pull request. `create_issue` can attach a milestone at creation time; this handles everything after that, including removing one.
+
+**Parameters:**
+- `owner` (string, required): Repository owner
+- `repo` (string, required): Repository name
+- `issueNumber` (number, required): Issue **or pull request** number
+- `milestoneNumber` (number or null, required): Milestone number to assign, or `null` to clear the current milestone
+
+**Example:**
+```typescript
+{
+  "owner": "joaodotwork",
+  "repo": "dpds-arkiv",
+  "issueNumber": 80,
+  "milestoneNumber": 4
+}
+```
+
+**Returns:**
+```json
+{
+  "type": "Issue",
+  "number": 80,
+  "url": "https://github.com/joaodotwork/dpds-arkiv/issues/80",
+  "milestone": { "number": 4, "title": "Epic 1: GitHub Metadata Workflow" }
+}
+```
+
+---
+
 ### `create_issue`
 
 Create an issue with optional milestone, labels, and assignees.
