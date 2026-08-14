@@ -816,9 +816,17 @@ pnpm run dev
 # Run tests
 pnpm test
 
+# Type-check everything, including tests
+# (the build compiles tsconfig.build.json, which excludes *.test.ts so
+#  tests are not published to npm — this checks them anyway)
+pnpm run typecheck
+
 # Test locally
 node dist/index.js
 ```
+
+CI runs build, typecheck, and tests on every push and pull request across Node 20 and 22,
+and fails if `package-lock.json` or `yarn.lock` reappears alongside `pnpm-lock.yaml`.
 
 ## License
 
