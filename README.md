@@ -278,7 +278,9 @@ Add an issue to a Projects v2 board.
 
 ### `create_iteration_field`
 
-Create an iteration field with weekly sprints.
+Create an iteration field with weekly sprints. The field and its iterations are created in a single mutation, so a failure leaves nothing behind to clean up.
+
+If a field of that name already exists but is **empty** — typically stranded by a failed create on an older version — it is adopted and configured, and the result carries `"adopted": true`. If it already holds iterations, the call is refused rather than reconfigured: replacing an iteration configuration regenerates every iteration ID and would detach all item assignments. Use `add_iteration` or `update_iteration` on a populated field.
 
 **Parameters:**
 - `projectId` (string, required): Project node ID
@@ -367,6 +369,8 @@ Identify the item either by number or by project item ID:
 
 Add a new iteration to an existing iteration field.
 
+> **Assignments are preserved automatically.** GitHub has no per-iteration mutation — the whole configuration must be replaced, and that regenerates every iteration ID, detaching all item assignments. Both `add_iteration` and `update_iteration` snapshot every item→iteration value first and re-apply it by iteration title afterwards. The result includes `assignmentsRestored: { restored, failed }` so a partial restore is visible rather than silent.
+
 **Parameters:**
 - `projectId` (string, required): Project node ID
 - `fieldId` (string, required): Iteration field ID
@@ -389,7 +393,7 @@ Add a new iteration to an existing iteration field.
 
 ### `update_iteration`
 
-Update an existing iteration's title, start date, or duration.
+Update an existing iteration's title, start date, or duration. Item assignments are preserved — see the note under [`add_iteration`](#add_iteration). Renaming is handled too: items on the renamed iteration are remapped to the new title rather than dropped.
 
 **Parameters:**
 - `projectId` (string, required): Project node ID
