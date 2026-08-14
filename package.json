@@ -1,6 +1,6 @@
 {
   "name": "@joaodotwork/plantas-github-projects-mcp",
-  "version": "1.5.3",
+  "version": "1.6.0",
   "description": "Plantas GitHub Projects v2 MCP server (unofficial) - automation for creating projects, milestones, issues, and iterations",
   "type": "module",
   "main": "dist/index.js",
@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "prepare": "npm run build",
+    "prepare": "tsc",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -42,6 +42,12 @@
   },
   "author": "João Doria de Souza",
   "license": "MIT",
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@octokit/auth-oauth-device": "^8.0.3",

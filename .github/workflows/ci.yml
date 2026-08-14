@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same PR cancels the first — no point finishing a run whose
+# commit is already superseded.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # This repo carried two committed lockfiles for four minor versions with nothing
+  # arbitrating between them (see #28). pnpm is the one package manager now, pinned via
+  # `packageManager` in package.json; this fails loudly if npm's lockfile comes back.
+  lockfile:
+    name: single lockfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fail if package-lock.json reappears
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "::error file=package-lock.json::package-lock.json is back. This project uses pnpm (see packageManager in package.json) — delete it and commit pnpm-lock.yaml instead."
+            exit 1
+          fi
+          if [ -f yarn.lock ]; then
+            echo "::error file=yarn.lock::yarn.lock found. This project uses pnpm (see packageManager in package.json)."
+            exit 1
+          fi
+          echo "pnpm-lock.yaml is the only lockfile."
+
+  build-test:
+    name: build & test (node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reads the pinned version from `packageManager` in package.json. Must run before
+      # setup-node, which needs pnpm on PATH to resolve its cache directory.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      # --frozen-lockfile turns a lockfile that disagrees with package.json into a hard
+      # failure, which is the drift that went unnoticed through the 1.5.x releases.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Test
+        run: pnpm test
