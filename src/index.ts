@@ -308,25 +308,37 @@ const tools: Tool[] = [
   {
     name: "assign_issue_to_iteration",
     description:
-      "Assign an issue to a specific iteration in a ProjectsV2. The issue must already be in the project.",
+      "Assign an issue or pull request to a specific iteration in a ProjectsV2. The item must already be on the board. Identify it either by number (owner + repo + issueNumber + projectNumber) or directly by project item ID (itemId + projectId, or itemId + owner + projectNumber).",
     inputSchema: {
       type: "object",
       properties: {
         owner: {
           type: "string",
-          description: "Repository owner",
+          description:
+            "Repository owner. Required unless both itemId and projectId are given.",
         },
         repo: {
           type: "string",
-          description: "Repository name",
+          description: "Repository name. Required when looking the item up by number.",
         },
         projectNumber: {
           type: "number",
-          description: "Project number (not ID)",
+          description: "Project number (not ID). Required unless projectId is given.",
         },
         issueNumber: {
           type: "number",
-          description: "Issue number",
+          description:
+            "Issue or pull request number. Required unless itemId is given.",
+        },
+        itemId: {
+          type: "string",
+          description:
+            "Project item ID (PVTI_...). Skips the number lookup when supplied.",
+        },
+        projectId: {
+          type: "string",
+          description:
+            "Project node ID (PVT_...). Skips the project lookup when supplied.",
         },
         fieldId: {
           type: "string",
@@ -337,14 +349,7 @@ const tools: Tool[] = [
           description: "Iteration ID to assign to",
         },
       },
-      required: [
-        "owner",
-        "repo",
-        "projectNumber",
-        "issueNumber",
-        "fieldId",
-        "iterationId",
-      ],
+      required: ["fieldId", "iterationId"],
     },
   },
   {

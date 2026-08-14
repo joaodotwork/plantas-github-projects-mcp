@@ -142,7 +142,8 @@ describe("assignIssueToIteration", () => {
       // getProjectItemId query
       .mockResolvedValueOnce({
         repository: {
-          issue: {
+          issueOrPullRequest: {
+            __typename: "Issue",
             projectItems: {
               nodes: [{ id: "item-789", project: { number: 5 } }],
             },
@@ -185,7 +186,8 @@ describe("assignIssueToIteration", () => {
     const gql = vi.fn()
       .mockResolvedValueOnce({
         repository: {
-          issue: {
+          issueOrPullRequest: {
+            __typename: "Issue",
             projectItems: { nodes: [{ id: "item-1", project: { number: 3 } }] },
           },
         },
@@ -211,7 +213,8 @@ describe("assignIssueToIteration", () => {
   it("throws if the issue is not found in the project", async () => {
     const gql = vi.fn().mockResolvedValueOnce({
       repository: {
-        issue: {
+        issueOrPullRequest: {
+          __typename: "Issue",
           projectItems: { nodes: [{ id: "item-other", project: { number: 99 } }] },
         },
       },
@@ -227,6 +230,173 @@ describe("assignIssueToIteration", () => {
         iterationId: "i-1",
       })
     ).rejects.toThrow("Issue #42 not found in project #5");
+  });
+
+  // Regression for #20/#25: the lookup used `repository.issue(number:)`, so any PR on the
+  // board failed with "Could not resolve to an Issue with the number of N".
+  it("resolves pull request items, not just issues", async () => {
+    const gql = vi.fn()
+      .mockResolvedValueOnce({
+        repository: {
+          issueOrPullRequest: {
+            __typename: "PullRequest",
+            projectItems: { nodes: [{ id: "item-pr", project: { number: 8 } }] },
+          },
+        },
+      })
+      .mockResolvedValueOnce({ repositoryOwner: { projectV2: { id: "proj-8" } } })
+      .mockResolvedValueOnce({
+        updateProjectV2ItemFieldValue: { projectV2Item: { id: "item-pr" } },
+      }) as unknown as GraphQLFn;
+
+    const result = await assignIssueToIteration(gql, {
+      owner: "netliferesearch",
+      repo: "the-vanguard",
+      projectNumber: 8,
+      issueNumber: 21,
+      fieldId: "f-1",
+      iterationId: "i-1",
+    });
+
+    expect(result).toEqual({ id: "item-pr" });
+    const { variables } = captureCall(vi.mocked(gql), 2);
+    expect(variables).toMatchObject({ itemId: "item-pr", projectId: "proj-8" });
+  });
+
+  it("queries issueOrPullRequest with fragments for both content types", async () => {
+    const gql = vi.fn()
+      .mockResolvedValueOnce({
+        repository: {
+          issueOrPullRequest: {
+            __typename: "PullRequest",
+            projectItems: { nodes: [{ id: "item-pr", project: { number: 8 } }] },
+          },
+        },
+      })
+      .mockResolvedValueOnce({ repositoryOwner: { projectV2: { id: "proj-8" } } })
+      .mockResolvedValueOnce({
+        updateProjectV2ItemFieldValue: { projectV2Item: { id: "item-pr" } },
+      }) as unknown as GraphQLFn;
+
+    await assignIssueToIteration(gql, {
+      owner: "o",
+      repo: "r",
+      projectNumber: 8,
+      issueNumber: 21,
+      fieldId: "f-1",
+      iterationId: "i-1",
+    });
+
+    const { query } = captureCall(vi.mocked(gql), 0);
+    expect(query).toContain("issueOrPullRequest");
+    expect(query).toContain("... on Issue");
+    expect(query).toContain("... on PullRequest");
+    // `issue(number:)` was the bug — it must be gone.
+    expect(query).not.toMatch(/\bissue\(number:/);
+  });
+
+  it("names the content type in the not-on-board error", async () => {
+    const gql = vi.fn().mockResolvedValueOnce({
+      repository: {
+        issueOrPullRequest: {
+          __typename: "PullRequest",
+          projectItems: { nodes: [] },
+        },
+      },
+    }) as unknown as GraphQLFn;
+
+    await expect(
+      assignIssueToIteration(gql, {
+        owner: "o",
+        repo: "r",
+        projectNumber: 8,
+        issueNumber: 21,
+        fieldId: "f-1",
+        iterationId: "i-1",
+      })
+    ).rejects.toThrow("Pull request #21 not found in project #8");
+  });
+
+  it("throws a clear error when the number matches neither an issue nor a PR", async () => {
+    const gql = vi.fn().mockResolvedValueOnce({
+      repository: { issueOrPullRequest: null },
+    }) as unknown as GraphQLFn;
+
+    await expect(
+      assignIssueToIteration(gql, {
+        owner: "o",
+        repo: "r",
+        projectNumber: 8,
+        issueNumber: 9999,
+        fieldId: "f-1",
+        iterationId: "i-1",
+      })
+    ).rejects.toThrow("No issue or pull request #9999 in o/r");
+  });
+
+  it("skips the lookup when an itemId is supplied directly", async () => {
+    const gql = vi.fn()
+      .mockResolvedValueOnce({ repositoryOwner: { projectV2: { id: "proj-8" } } })
+      .mockResolvedValueOnce({
+        updateProjectV2ItemFieldValue: { projectV2Item: { id: "PVTI_direct" } },
+      }) as unknown as GraphQLFn;
+
+    await assignIssueToIteration(gql, {
+      owner: "o",
+      projectNumber: 8,
+      itemId: "PVTI_direct",
+      fieldId: "f-1",
+      iterationId: "i-1",
+    });
+
+    expect(vi.mocked(gql)).toHaveBeenCalledTimes(2);
+    const { variables } = captureCall(vi.mocked(gql), 1);
+    expect(variables).toMatchObject({ itemId: "PVTI_direct", projectId: "proj-8" });
+  });
+
+  it("skips project resolution when a projectId is supplied", async () => {
+    const gql = vi.fn().mockResolvedValueOnce({
+      updateProjectV2ItemFieldValue: { projectV2Item: { id: "PVTI_direct" } },
+    }) as unknown as GraphQLFn;
+
+    await assignIssueToIteration(gql, {
+      projectId: "PVT_given",
+      itemId: "PVTI_direct",
+      fieldId: "f-1",
+      iterationId: "i-1",
+    });
+
+    expect(vi.mocked(gql)).toHaveBeenCalledTimes(1);
+    const { variables } = captureCall(vi.mocked(gql), 0);
+    expect(variables).toMatchObject({ projectId: "PVT_given", itemId: "PVTI_direct" });
+  });
+
+  it("rejects input that identifies neither an item nor an issue number", async () => {
+    const gql = vi.fn() as unknown as GraphQLFn;
+
+    await expect(
+      assignIssueToIteration(gql, {
+        projectId: "PVT_given",
+        fieldId: "f-1",
+        iterationId: "i-1",
+      })
+    ).rejects.toThrow(/itemId/);
+
+    expect(vi.mocked(gql)).not.toHaveBeenCalled();
+  });
+
+  it("rejects input with no way to resolve the project", async () => {
+    const gql = vi.fn() as unknown as GraphQLFn;
+
+    await expect(
+      assignIssueToIteration(gql, {
+        itemId: "PVTI_direct",
+        fieldId: "f-1",
+        iterationId: "i-1",
+      })
+    ).rejects.toThrow(/projectId/);
+
+    expect(vi.mocked(gql)).not.toHaveBeenCalled();
   });
 });
 

@@ -14,11 +14,20 @@ export interface IterationInput {
   }>;
 }
 
+/**
+ * Identifies the target item either by number (`owner`/`repo`/`issueNumber`) or directly by
+ * project item ID, and the project either by number (`owner`/`projectNumber`) or by ID.
+ * `update_item_status` has always taken IDs directly; this mirrors it.
+ */
 export interface AssignIterationInput {
-  owner: string;
-  repo: string;
-  projectNumber: number;
-  issueNumber: number;
+  owner?: string;
+  repo?: string;
+  projectNumber?: number;
+  issueNumber?: number;
+  /** Project item ID (`PVTI_…`). When given, no number lookup happens. */
+  itemId?: string;
+  /** Project node ID (`PVT_…`). When given, no project lookup happens. */
+  projectId?: string;
   fieldId: string;
   iterationId: string;
 }
@@ -50,6 +59,13 @@ export async function getProjectId(
   return result.repositoryOwner.projectV2.id;
 }
 
+/**
+ * Resolve a project item ID from an issue *or* pull request number.
+ *
+ * ProjectsV2 boards hold both, so this queries the `issueOrPullRequest` union. The previous
+ * `repository.issue(number:)` form failed outright on PR items with "Could not resolve to an
+ * Issue with the number of N" (#20, #25).
+ */
 export async function getProjectItemId(
   graphqlFn: GraphQLFn,
   owner: string,
@@ -61,13 +77,16 @@ export async function getProjectItemId(
     `
     query($owner: String!, $repo: String!, $issueNumber: Int!) {
       repository(owner: $owner, name: $repo) {
-        issue(number: $issueNumber) {
-          projectItems(first: 10) {
-            nodes {
-              id
-              project {
-                number
-              }
+        issueOrPullRequest(number: $issueNumber) {
+          __typename
+          ... on Issue {
+            projectItems(first: 20) {
+              nodes { id project { number } }
+            }
+          }
+          ... on PullRequest {
+            projectItems(first: 20) {
+              nodes { id project { number } }
             }
           }
         }
@@ -77,13 +96,21 @@ export async function getProjectItemId(
     { owner, repo, issueNumber }
   );
 
-  const item = result.repository.issue.projectItems.nodes.find(
+  const content = result.repository?.issueOrPullRequest;
+  if (!content) {
+    throw new Error(
+      `No issue or pull request #${issueNumber} in ${owner}/${repo}`
+    );
+  }
+
+  const item = content.projectItems.nodes.find(
     (node: any) => node.project.number === projectNumber
   );
 
   if (!item) {
+    const kind = content.__typename === "PullRequest" ? "Pull request" : "Issue";
     throw new Error(
-      `Issue #${issueNumber} not found in project #${projectNumber}`
+      `${kind} #${issueNumber} not found in project #${projectNumber}`
     );
   }
 
@@ -576,15 +603,38 @@ export async function assignIssueToIteration(
   graphqlFn: GraphQLFn,
   input: AssignIterationInput
 ) {
-  const itemId = await getProjectItemId(
-    graphqlFn,
-    input.owner,
-    input.repo,
-    input.issueNumber,
-    input.projectNumber
-  );
+  const canLookUpItem =
+    input.owner != null &&
+    input.repo != null &&
+    input.issueNumber != null &&
+    input.projectNumber != null;
 
-  const projectId = await getProjectId(graphqlFn, input.owner, input.projectNumber);
+  if (!input.itemId && !canLookUpItem) {
+    throw new Error(
+      "Cannot identify the item: pass either itemId, or owner + repo + issueNumber + projectNumber."
+    );
+  }
+
+  const canLookUpProject = input.owner != null && input.projectNumber != null;
+  if (!input.projectId && !canLookUpProject) {
+    throw new Error(
+      "Cannot identify the project: pass either projectId, or owner + projectNumber."
+    );
+  }
+
+  const itemId =
+    input.itemId ??
+    (await getProjectItemId(
+      graphqlFn,
+      input.owner!,
+      input.repo!,
+      input.issueNumber!,
+      input.projectNumber!
+    ));
+
+  const projectId =
+    input.projectId ??
+    (await getProjectId(graphqlFn, input.owner!, input.projectNumber!));
 
   const result = await graphqlFn<any>(
     `

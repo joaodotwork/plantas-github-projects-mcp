@@ -293,23 +293,37 @@ Create an iteration field with weekly sprints.
 
 ### `assign_issue_to_iteration`
 
-Assign an issue to a specific iteration.
+Assign an issue **or pull request** to a specific iteration. The item must already be on the board.
+
+Identify the item either by number or by project item ID:
 
 **Parameters:**
-- `owner` (string, required): Repository owner
-- `repo` (string, required): Repository name
-- `projectNumber` (number, required): Project number
-- `issueNumber` (number, required): Issue number
 - `fieldId` (string, required): Iteration field ID
 - `iterationId` (string, required): Iteration ID
+- `owner` (string): Repository owner — required unless both `itemId` and `projectId` are given
+- `repo` (string): Repository name — required when looking up by number
+- `projectNumber` (number): Project number — required unless `projectId` is given
+- `issueNumber` (number): Issue **or PR** number — required unless `itemId` is given
+- `itemId` (string): Project item ID (`PVTI_...`) — skips the number lookup
+- `projectId` (string): Project node ID (`PVT_...`) — skips the project lookup
 
-**Example:**
+**Example — by number (works for issues and PRs alike):**
 ```typescript
 {
   "owner": "joaodotwork",
   "repo": "dpds-arkiv",
   "projectNumber": 7,
   "issueNumber": 80,
+  "fieldId": "PVTIF_lAHOAwJiCM4BNC20zg8J544",
+  "iterationId": "bab3ba50"
+}
+```
+
+**Example — by item ID (same escape hatch `update_item_status` offers):**
+```typescript
+{
+  "projectId": "PVT_kwHOAwJiCM4BUd_L",
+  "itemId": "PVTI_lAHOAwJiCM4BNC20zgYd5tc",
   "fieldId": "PVTIF_lAHOAwJiCM4BNC20zg8J544",
   "iterationId": "bab3ba50"
 }
