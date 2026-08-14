@@ -23,7 +23,7 @@ A Model Context Protocol (MCP) server for automating GitHub Projects v2 workflow
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - **Option A:** GitHub Personal Access Token (PAT) with `repo` and `project` scopes
 - **Option B:** GitHub OAuth App with Device Flow enabled (auto-refreshing tokens)
 
@@ -825,7 +825,7 @@ pnpm run typecheck
 node dist/index.js
 ```
 
-CI runs build, typecheck, and tests on every push and pull request across Node 20 and 22,
+CI runs build, typecheck, and tests on every push and pull request across Node 22 and 24,
 and fails if `package-lock.json` or `yarn.lock` reappears alongside `pnpm-lock.yaml`.
 
 ## License

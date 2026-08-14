@@ -43,6 +43,9 @@
   },
   "author": "João Doria de Souza",
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "packageManager": "pnpm@10.33.0",
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -50,14 +53,14 @@
     ]
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
-    "@octokit/auth-oauth-device": "^8.0.3",
-    "@octokit/graphql": "^8.1.1",
-    "@octokit/oauth-methods": "^6.0.2"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@octokit/auth-oauth-device": "^8.0.4",
+    "@octokit/graphql": "^8.2.2",
+    "@octokit/oauth-methods": "^6.0.4"
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
-    "typescript": "^5.3.3",
-    "vitest": "^3.2.4"
+    "@types/node": "^22.20.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
   }
 }
