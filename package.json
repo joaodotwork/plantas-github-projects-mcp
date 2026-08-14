@@ -55,12 +55,12 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@octokit/auth-oauth-device": "^8.0.4",
-    "@octokit/graphql": "^8.2.2",
+    "@octokit/graphql": "^9.0.4",
     "@octokit/oauth-methods": "^6.0.4"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
-    "typescript": "^5.9.3",
-    "vitest": "^3.2.7"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   }
 }
