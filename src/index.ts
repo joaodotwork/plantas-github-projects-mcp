@@ -20,6 +20,7 @@ import {
   assignIssueToIteration,
   addIteration,
   updateIteration,
+  restoreIterationSnapshot,
   type IterationInput,
   type AssignIterationInput,
   type AddIterationInput,
@@ -626,6 +627,11 @@ const tools: Tool[] = [
           type: "number",
           description: "Duration in days (typically 7 or 14)",
         },
+        dryRun: {
+          type: "boolean",
+          description:
+            "Report what the call would do and mutate nothing. Returns the iterations before and after, a per-iteration breakdown of the assignments that would be snapshotted and restored, and any detected rename. Recommended before a real call: the mutation regenerates every iteration ID and detaches every assignment.",
+        },
       },
       required: ["projectId", "fieldId", "title", "startDate", "duration"],
     },
@@ -661,8 +667,29 @@ const tools: Tool[] = [
           type: "number",
           description: "New duration in days (optional)",
         },
+        dryRun: {
+          type: "boolean",
+          description:
+            "Report what the call would do and mutate nothing. Returns the iterations before and after, a per-iteration breakdown of the assignments that would be snapshotted and restored, and any detected rename. Recommended before a real call: the mutation regenerates every iteration ID and detaches every assignment.",
+        },
       },
       required: ["projectId", "fieldId", "iterationId"],
+    },
+  },
+  {
+    name: "restore_iteration_snapshot",
+    description:
+      "Re-apply an iteration snapshot written by add_iteration or update_iteration. Use it when a call reported failed restores, or when a call was interrupted before its restore finished — the snapshot path is in the tool's response. Idempotent: assignments an item already has are re-applied harmlessly.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        snapshotPath: {
+          type: "string",
+          description:
+            "Path to the snapshot JSON, as returned in the snapshotPath field of an add_iteration or update_iteration response (under ~/.config/github-projects-mcp/iteration-snapshots/)",
+        },
+      },
+      required: ["snapshotPath"],
     },
   },
 ];
@@ -671,7 +698,7 @@ const tools: Tool[] = [
 const server = new Server(
   {
     name: "github-projects-mcp",
-    version: "1.5.0",
+    version: "1.7.0",
   },
   {
     capabilities: {
@@ -940,6 +967,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const field = await updateIteration(githubGraphQL, input);
         return {
           content: [{ type: "text", text: JSON.stringify(field, null, 2) }],
+        };
+      }
+
+      case "restore_iteration_snapshot": {
+        const { snapshotPath } = args as unknown as { snapshotPath: string };
+        const result = await restoreIterationSnapshot(
+          githubGraphQL,
+          snapshotPath,
+        );
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         };
       }
 
