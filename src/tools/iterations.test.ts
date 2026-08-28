@@ -1,12 +1,34 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   createIterationField,
   assignIssueToIteration,
   addIteration,
   updateIteration,
+  restoreIterationSnapshot,
+  countByIteration,
   getProjectId,
   type GraphQLFn,
 } from "./iterations.js";
+import {
+  writeIterationSnapshot,
+  readIterationSnapshot,
+} from "./iteration-snapshots.js";
+
+// The real store writes under ~/.config; these tests only care that it is called
+// with the right payload at the right point in the sequence.
+vi.mock("./iteration-snapshots.js", () => ({
+  writeIterationSnapshot: vi.fn(() => "/snap/fake-snapshot.json"),
+  readIterationSnapshot: vi.fn(),
+}));
+
+const mockWrite = vi.mocked(writeIterationSnapshot);
+const mockRead = vi.mocked(readIterationSnapshot);
+
+beforeEach(() => {
+  mockWrite.mockClear();
+  mockWrite.mockReturnValue("/snap/fake-snapshot.json");
+  mockRead.mockReset();
+});
 
 // Helpers to capture what was sent to the GraphQL client
 function captureCall(mock: ReturnType<typeof vi.fn>, callIndex: number) {
@@ -761,7 +783,11 @@ describe("addIteration", () => {
       duration: 7,
     });
 
-    expect(result.assignmentsRestored).toEqual({ restored: 1, failed: [] });
+    expect(result.assignmentsRestored).toEqual({
+      restored: 1,
+      failed: [],
+      byIteration: { "Sprint 1": 1 },
+    });
 
     // The restore mutation runs after the field update and targets the NEW id.
     const { query, variables } = captureCall(vi.mocked(gql), MUTATION_CALL + 1);
@@ -932,7 +958,11 @@ describe("updateIteration", () => {
     });
 
     // Snapshot said "Sprint 1"; the iteration is now "Renamed". Restore must follow it.
-    expect(result.assignmentsRestored).toEqual({ restored: 1, failed: [] });
+    expect(result.assignmentsRestored).toEqual({
+      restored: 1,
+      failed: [],
+      byIteration: { Renamed: 1 },
+    });
     const { variables } = captureCall(vi.mocked(gql), MUTATION_CALL + 1);
     expect(variables.iterationId).toBe("NEW-ID");
   });
@@ -981,5 +1011,509 @@ describe("updateIteration", () => {
       startDate: "2026-01-01",
       duration: 7,
     });
+  });
+});
+
+describe("countByIteration", () => {
+  it("tallies assignments by iteration title", () => {
+    expect(
+      countByIteration([
+        { itemId: "a", label: "Issue #1", iterationTitle: "Sprint 1" },
+        { itemId: "b", label: "Issue #2", iterationTitle: "Sprint 1" },
+        { itemId: "c", label: "Issue #3", iterationTitle: "Sprint 2" },
+      ]),
+    ).toEqual({ "Sprint 1": 2, "Sprint 2": 1 });
+  });
+
+  it("returns an empty tally for an empty snapshot", () => {
+    expect(countByIteration([])).toEqual({});
+  });
+});
+
+describe("dryRun", () => {
+  const EXISTING = [
+    { id: "iter-1", title: "Sprint 1", startDate: "2026-01-01", duration: 7 },
+    { id: "iter-2", title: "Sprint 2", startDate: "2026-01-08", duration: 7 },
+  ];
+
+  it("add_iteration reports before/after without mutating anything", async () => {
+    const gql = mockWithFieldConfig(EXISTING, {}, {
+      assignments: [
+        { itemId: "item-1", number: 1, title: "Sprint 1" },
+        { itemId: "item-2", number: 2, title: "Sprint 1" },
+        { itemId: "item-3", number: 3, title: "Sprint 2" },
+      ],
+    });
+
+    const report: any = await addIteration(gql, {
+      projectId: "proj-xyz",
+      fieldId: "field-abc",
+      title: "Sprint 3",
+      startDate: "2026-01-15",
+      duration: 7,
+      dryRun: true,
+    });
+
+    expect(report.dryRun).toBe(true);
+    expect(report.operation).toBe("add_iteration");
+    expect(report.fieldName).toBe("Sprint");
+
+    // Only the two read queries ran — no updateProjectV2Field, no restores.
+    const queries = vi.mocked(gql).mock.calls.map((c) => c[0] as string);
+    expect(queries).toHaveLength(2);
+    expect(queries.some((q) => q.includes("updateProjectV2Field"))).toBe(false);
+
+    // And nothing was written to disk: a dry run has no window to recover from.
+    expect(mockWrite).not.toHaveBeenCalled();
+  });
+
+  it("reports the iterations as they are and as they would be", async () => {
+    const gql = mockWithFieldConfig(EXISTING, {});
+
+    const report: any = await addIteration(gql, {
+      projectId: "proj-xyz",
+      fieldId: "field-abc",
+      title: "Sprint 3",
+      startDate: "2026-01-15",
+      duration: 7,
+      dryRun: true,
+    });
+
+    // Before: ids included, since those are what the caller sees today.
+    expect(report.iterationsBefore.map((i: any) => [i.id, i.title])).toEqual([
+      ["iter-1", "Sprint 1"],
+      ["iter-2", "Sprint 2"],
+    ]);
+    // After: no ids — every one is regenerated, so promising them would be a lie.
+    expect(report.iterationsAfter).toHaveLength(3);
+    expect(report.iterationsAfter[2]).toEqual({
+      title: "Sprint 3",
+      startDate: "2026-01-15",
+      duration: 7,
+    });
+    expect(report.iterationsAfter.every((i: any) => !("id" in i))).toBe(true);
+  });
+
+  it("breaks the assignment count down per iteration, not just a total", async () => {
+    const gql = mockWithFieldConfig(EXISTING, {}, {
+      assignments: [
+        { itemId: "item-1", number: 1, title: "Sprint 1" },
+        { itemId: "item-2", number: 2, title: "Sprint 1" },
+        { itemId: "item-3", number: 3, title: "Sprint 2" },
+      ],
+    });
+
+    const report: any = await addIteration(gql, {
+      projectId: "proj-xyz",
+      fieldId: "field-abc",
+      title: "Sprint 3",
+      startDate: "2026-01-15",
+      duration: 7,
+      dryRun: true,
+    });
+
+    expect(report.assignments).toEqual({
+      total: 3,
+      byIteration: { "Sprint 1": 2, "Sprint 2": 1 },
+    });
+  });
+
+  it("add_iteration reports no rename", async () => {
+    const gql = mockWithFieldConfig(EXISTING, {});
+    const report: any = await addIteration(gql, {
+      projectId: "proj-xyz",
+      fieldId: "field-abc",
+      title: "Sprint 3",
+      startDate: "2026-01-15",
+      duration: 7,
+      dryRun: true,
+    });
+    expect(report.rename).toBeNull();
+  });
+
+  it("surfaces a detected rename and how many assignments it remaps", async () => {
+    const gql = mockWithFieldConfig(EXISTING, {}, {
+      assignments: [
+        { itemId: "item-1", number: 1, title: "Sprint 1" },
+        { itemId: "item-2", number: 2, title: "Sprint 1" },
+        { itemId: "item-3", number: 3, title: "Sprint 2" },
+      ],
+    });
+
+    const report: any = await updateIteration(gql, {
+      projectId: "proj-xyz",
+      fieldId: "field-abc",
+      iterationId: "iter-1",
+      title: "Phase 7: B",
+      dryRun: true,
+    });
+
+    expect(report.rename).toEqual({
+      from: "Sprint 1",
+      to: "Phase 7: B",
+      assignmentsRemapped: 2,
+    });
+    // Counts are keyed by the titles the restore will actually use.
+    expect(report.assignments.byIteration).toEqual({
+      "Phase 7: B": 2,
+      "Sprint 2": 1,
+    });
+    expect(vi.mocked(gql).mock.calls).toHaveLength(2);
+  });
+
+  it("reports null rename when the title is unchanged", async () => {
+    const gql = mockWithFieldConfig(EXISTING, {});
+    const report: any = await updateIteration(gql, {
+      projectId: "proj-xyz",
+      fieldId: "field-abc",
+      iterationId: "iter-1",
+      title: "Sprint 1",
+      duration: 14,
+      dryRun: true,
+    });
+    expect(report.rename).toBeNull();
+  });
+});
+
+describe("duplicate iteration titles", () => {
+  const EXISTING = [
+    { id: "iter-1", title: "Sprint 1", startDate: "2026-01-01", duration: 7 },
+    { id: "iter-2", title: "Sprint 2", startDate: "2026-01-08", duration: 7 },
+  ];
+
+  it("refuses to add an iteration whose title already exists", async () => {
+    const gql = mockWithFieldConfig(EXISTING, {});
+
+    await expect(
+      addIteration(gql, {
+        projectId: "proj-xyz",
+        fieldId: "field-abc",
+        title: "Sprint 2",
+        startDate: "2026-01-15",
+        duration: 7,
+      }),
+    ).rejects.toThrow(/titles must be unique/i);
+
+    // Rejected on the config read alone — no snapshot query, no mutation.
+    expect(vi.mocked(gql).mock.calls).toHaveLength(1);
+    expect(mockWrite).not.toHaveBeenCalled();
+  });
+
+  it("refuses a rename that collides with a sibling iteration", async () => {
+    const gql = mockWithFieldConfig(EXISTING, {});
+
+    await expect(
+      updateIteration(gql, {
+        projectId: "proj-xyz",
+        fieldId: "field-abc",
+        iterationId: "iter-1",
+        title: "Sprint 2",
+      }),
+    ).rejects.toThrow(/titles must be unique/i);
+
+    expect(vi.mocked(gql).mock.calls).toHaveLength(1);
+    expect(mockWrite).not.toHaveBeenCalled();
+  });
+
+  it("names the offending title so the caller knows what to rename", async () => {
+    const gql = mockWithFieldConfig(EXISTING, {});
+    await expect(
+      addIteration(gql, {
+        projectId: "proj-xyz",
+        fieldId: "field-abc",
+        title: "Sprint 2",
+        startDate: "2026-01-15",
+        duration: 7,
+      }),
+    ).rejects.toThrow(/'Sprint 2'/);
+  });
+
+  it("blocks a dry run too, rather than reporting a call that cannot succeed", async () => {
+    const gql = mockWithFieldConfig(EXISTING, {});
+    await expect(
+      addIteration(gql, {
+        projectId: "proj-xyz",
+        fieldId: "field-abc",
+        title: "Sprint 2",
+        startDate: "2026-01-15",
+        duration: 7,
+        dryRun: true,
+      }),
+    ).rejects.toThrow(/titles must be unique/i);
+  });
+});
+
+describe("snapshot persistence", () => {
+  const EXISTING = [
+    { id: "iter-1", title: "Sprint 1", startDate: "2026-01-01", duration: 7 },
+  ];
+
+  const MUTATION_RESULT = {
+    updateProjectV2Field: {
+      projectV2Field: {
+        id: "field-abc",
+        name: "Sprint",
+        configuration: {
+          iterations: [
+            { id: "REGENERATED", title: "Sprint 1", startDate: "2026-01-01", duration: 7 },
+            { id: "iter-new", title: "Sprint 2", startDate: "2026-01-08", duration: 7 },
+          ],
+          completedIterations: [],
+        },
+      },
+    },
+  };
+
+  it("writes the snapshot BEFORE the destructive mutation", async () => {
+    const gql = mockWithFieldConfig(EXISTING, MUTATION_RESULT, {
+      assignments: [{ itemId: "item-1", number: 42, title: "Sprint 1" }],
+    });
+
+    // Capture how far the GraphQL sequence had got when the file was written.
+    let gqlCallsAtWrite = -1;
+    mockWrite.mockImplementation(() => {
+      gqlCallsAtWrite = vi.mocked(gql).mock.calls.length;
+      return "/snap/fake-snapshot.json";
+    });
+
+    await addIteration(gql, {
+      projectId: "proj-xyz",
+      fieldId: "field-abc",
+      title: "Sprint 2",
+      startDate: "2026-01-08",
+      duration: 7,
+    });
+
+    // 2 = config read + snapshot read. The mutation is call 3, so the file
+    // exists before anything is detached — the whole point of #32.
+    expect(gqlCallsAtWrite).toBe(2);
+  });
+
+  it("returns the snapshot path so a failed restore is recoverable", async () => {
+    const gql = mockWithFieldConfig(EXISTING, MUTATION_RESULT, {
+      assignments: [{ itemId: "item-1", number: 42, title: "Sprint 1" }],
+    });
+
+    const result: any = await addIteration(gql, {
+      projectId: "proj-xyz",
+      fieldId: "field-abc",
+      title: "Sprint 2",
+      startDate: "2026-01-08",
+      duration: 7,
+    });
+
+    expect(result.snapshotPath).toBe("/snap/fake-snapshot.json");
+  });
+
+  it("records the pre-mutation iterations and assignments in the snapshot", async () => {
+    const gql = mockWithFieldConfig(EXISTING, MUTATION_RESULT, {
+      assignments: [{ itemId: "item-1", number: 42, title: "Sprint 1" }],
+    });
+
+    await addIteration(gql, {
+      projectId: "proj-xyz",
+      fieldId: "field-abc",
+      title: "Sprint 2",
+      startDate: "2026-01-08",
+      duration: 7,
+    });
+
+    const payload = mockWrite.mock.calls[0][0];
+    expect(payload.operation).toBe("add_iteration");
+    expect(payload.projectId).toBe("proj-xyz");
+    expect(payload.fieldId).toBe("field-abc");
+    expect(payload.fieldName).toBe("Sprint");
+    // Ids kept: recovering by hand needs to know what was there.
+    expect(payload.iterationsBefore).toEqual(EXISTING);
+    expect(payload.assignments).toEqual([
+      { itemId: "item-1", label: "Issue #42", iterationTitle: "Sprint 1" },
+    ]);
+  });
+
+  it("stores the REMAPPED assignments for a rename, so the file replays standalone", async () => {
+    const renameResult = {
+      updateProjectV2Field: {
+        projectV2Field: {
+          id: "field-abc",
+          name: "Sprint",
+          configuration: {
+            iterations: [
+              { id: "NEW-ID", title: "Renamed", startDate: "2026-01-01", duration: 7 },
+            ],
+            completedIterations: [],
+          },
+        },
+      },
+    };
+    const gql = mockWithFieldConfig(EXISTING, renameResult, {
+      assignments: [{ itemId: "item-1", number: 42, title: "Sprint 1" }],
+    });
+
+    await updateIteration(gql, {
+      projectId: "proj-xyz",
+      fieldId: "field-abc",
+      iterationId: "iter-1",
+      title: "Renamed",
+    });
+
+    const payload = mockWrite.mock.calls[0][0];
+    expect(payload.operation).toBe("update_iteration");
+    // "Sprint 1" would no longer resolve — the file holds the post-rename title.
+    expect(payload.assignments[0].iterationTitle).toBe("Renamed");
+  });
+
+  it("does not mutate when the snapshot cannot be written", async () => {
+    const gql = mockWithFieldConfig(EXISTING, MUTATION_RESULT, {
+      assignments: [{ itemId: "item-1", number: 42, title: "Sprint 1" }],
+    });
+    mockWrite.mockImplementation(() => {
+      throw new Error("EROFS: read-only file system");
+    });
+
+    await expect(
+      addIteration(gql, {
+        projectId: "proj-xyz",
+        fieldId: "field-abc",
+        title: "Sprint 2",
+        startDate: "2026-01-08",
+        duration: 7,
+      }),
+    ).rejects.toThrow(/read-only file system/);
+
+    // Failing closed: no updateProjectV2Field ran, so nothing was detached.
+    const queries = vi.mocked(gql).mock.calls.map((c) => c[0] as string);
+    expect(queries.some((q) => q.includes("updateProjectV2Field"))).toBe(false);
+  });
+});
+
+describe("restoreIterationSnapshot", () => {
+  const SNAPSHOT = {
+    version: 1,
+    createdAt: "2026-08-28T12:00:00.000Z",
+    operation: "add_iteration" as const,
+    projectId: "proj-xyz",
+    fieldId: "field-abc",
+    fieldName: "Sprint",
+    iterationsBefore: [
+      { id: "iter-old", title: "Sprint 1", startDate: "2026-01-01", duration: 7 },
+    ],
+    assignments: [
+      { itemId: "item-1", label: "Issue #42", iterationTitle: "Sprint 1" },
+      { itemId: "item-2", label: "Issue #43", iterationTitle: "Sprint 2" },
+    ],
+  };
+
+  /** Config read, then one restore mutation per assignment. */
+  function mockForReplay() {
+    const mock = vi.fn().mockResolvedValueOnce({
+      node: {
+        fields: {
+          nodes: [
+            {
+              id: "field-abc",
+              name: "Sprint",
+              configuration: {
+                duration: 7,
+                startDay: 1,
+                iterations: [
+                  { id: "fresh-1", title: "Sprint 1", startDate: "2026-01-01", duration: 7 },
+                  { id: "fresh-2", title: "Sprint 2", startDate: "2026-01-08", duration: 7 },
+                ],
+                completedIterations: [],
+              },
+            },
+          ],
+        },
+      },
+    });
+    for (let i = 0; i < SNAPSHOT.assignments.length; i++) {
+      mock.mockResolvedValueOnce({
+        updateProjectV2ItemFieldValue: { projectV2Item: { id: "item" } },
+      });
+    }
+    return mock as unknown as GraphQLFn;
+  }
+
+  it("replays the snapshot against the field's current iteration ids", async () => {
+    mockRead.mockReturnValue(SNAPSHOT);
+    const gql = mockForReplay();
+
+    const result: any = await restoreIterationSnapshot(gql, "/snap/s.json");
+
+    expect(mockRead).toHaveBeenCalledWith("/snap/s.json");
+    expect(result.assignmentsRestored.restored).toBe(2);
+    expect(result.assignmentsRestored.failed).toEqual([]);
+
+    // The ids come from the fresh read, not from the (stale) snapshot.
+    const restores = vi.mocked(gql).mock.calls.slice(1);
+    expect(restores.map((c) => (c[1] as any).iterationId)).toEqual([
+      "fresh-1",
+      "fresh-2",
+    ]);
+  });
+
+  it("reports where the assignments landed, per iteration", async () => {
+    mockRead.mockReturnValue(SNAPSHOT);
+    const result: any = await restoreIterationSnapshot(mockForReplay(), "/snap/s.json");
+
+    expect(result.assignmentsRestored.byIteration).toEqual({
+      "Sprint 1": 1,
+      "Sprint 2": 1,
+    });
+    // Snapshot total vs. restored total is the diff that verifies the replay.
+    expect(result.assignmentsInSnapshot).toBe(2);
+  });
+
+  it("carries the snapshot's provenance into the result", async () => {
+    mockRead.mockReturnValue(SNAPSHOT);
+    const result: any = await restoreIterationSnapshot(mockForReplay(), "/snap/s.json");
+
+    expect(result.snapshotPath).toBe("/snap/s.json");
+    expect(result.operation).toBe("add_iteration");
+    expect(result.createdAt).toBe("2026-08-28T12:00:00.000Z");
+    expect(result.fieldName).toBe("Sprint");
+  });
+
+  it("reports entries whose iteration no longer exists instead of failing the replay", async () => {
+    mockRead.mockReturnValue({
+      ...SNAPSHOT,
+      assignments: [
+        { itemId: "item-1", label: "Issue #42", iterationTitle: "Deleted Sprint" },
+      ],
+    });
+    const gql = vi.fn().mockResolvedValueOnce({
+      node: {
+        fields: {
+          nodes: [
+            {
+              id: "field-abc",
+              name: "Sprint",
+              configuration: {
+                duration: 7,
+                startDay: 1,
+                iterations: [
+                  { id: "fresh-1", title: "Sprint 1", startDate: "2026-01-01", duration: 7 },
+                ],
+                completedIterations: [],
+              },
+            },
+          ],
+        },
+      },
+    }) as unknown as GraphQLFn;
+
+    const result: any = await restoreIterationSnapshot(gql, "/snap/s.json");
+    expect(result.assignmentsRestored.restored).toBe(0);
+    expect(result.assignmentsRestored.failed).toHaveLength(1);
+    expect(result.assignmentsRestored.failed[0].label).toBe("Issue #42");
+  });
+
+  it("propagates a read failure rather than reporting a successful no-op", async () => {
+    mockRead.mockImplementation(() => {
+      throw new Error("Cannot read iteration snapshot /snap/gone.json: ENOENT");
+    });
+    await expect(
+      restoreIterationSnapshot(vi.fn() as unknown as GraphQLFn, "/snap/gone.json"),
+    ).rejects.toThrow(/ENOENT/);
   });
 });

@@ -8,3 +8,5 @@ github-mcp-server-fork/
 
 .claude/settings.local.json
 .claude/*.sh
+.claude/context.md
+.claude/cross-session.log
